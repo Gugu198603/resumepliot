@@ -11,6 +11,16 @@ export default function ConversationTimeline({ turns }: { turns: any[] }) {
             <div className="message user"><strong>Answer</strong><p>{turn.answer || '-'}</p></div>
             <div className="message critic"><strong>Critique</strong><p>{Array.isArray(turn.critique) ? turn.critique.join('；') : (turn.critique || '-')}</p></div>
             <div className="message writer"><strong>Improved</strong><p>{turn.improvedAnswer || '-'}</p></div>
+            {turn.retrieved?.length ? (
+              <div className="message retriever">
+                <strong>Retrieved Context</strong>
+                <ul>
+                  {turn.retrieved.map((item: any, i: number) => (
+                    <li key={i}>[{item.source || 'resume'}] score={item.score} {String(item.content || '').slice(0, 120)}...</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
           </div>
         </div>
       ))}

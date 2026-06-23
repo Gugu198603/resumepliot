@@ -7,3 +7,5 @@ build/
 !.env.example
 .hf-cache/
 .vscode/
+data/app-db.json
+data/latest.json

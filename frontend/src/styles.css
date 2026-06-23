@@ -400,3 +400,6 @@ pre {
 .message.critic { border-left: 4px solid #b78f88; }
 .message.writer { border-left: 4px solid #7f8fb5; }
 .timeline-list { margin: 0; padding-left: 18px; }
+
+.message.retriever { border-left: 4px solid #7fa6c7; }
+.message.retriever ul { margin: 8px 0 0 18px; color: #675f5a; }

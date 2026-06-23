@@ -1,18 +1,17 @@
+import { useMemo, useState } from 'react';
 import ConversationTimeline from './ConversationTimeline';
 
-function deriveTurns(session: any) {
-  const runs = session?.runs || [];
-  return runs.map((run: any) => ({
-    question: run.goal || 'Mock interview question',
-    answer: run.hasAnswer ? 'This run included an answer.' : 'No answer stored yet.',
-    critique: run.agentOutputs?.find?.((x: any) => x.step?.agent === 'critic')?.output?.feedback || [],
-    improvedAnswer: run.agentOutputs?.find?.((x: any) => x.step?.agent === 'writer')?.output?.improvedAnswer || ''
-  }));
-}
-
-export default function SessionDetailPanel({ session }: { session: any | null }) {
+export default function SessionDetailPanel({ session, resumeText, onContinueSession }: { session: any | null; resumeText: string; onContinueSession?: (payload: any) => Promise<void> | void }) {
+  const [answer, setAnswer] = useState('');
   if (!session) return <p className="empty">点击左侧某个 session 查看详情结构。</p>;
-  const turns = deriveTurns(session);
+
+  const nextQuestion = useMemo(() => {
+    const turns = session.turns || [];
+    const lastTurn = turns[turns.length - 1];
+    if (!lastTurn) return session.goal || '请介绍一下这段经历。';
+    if (lastTurn.answer) return `基于你上一轮回答“${String(lastTurn.answer).slice(0, 28)}...”，请继续补充最关键的实现细节与验证方式。`;
+    return lastTurn.question || session.goal || '请继续介绍一下这段经历。';
+  }, [session]);
 
   return (
     <div className="detail-stack">
@@ -22,15 +21,20 @@ export default function SessionDetailPanel({ session }: { session: any | null })
       </div>
       <div className="detail-grid two-col">
         <div className="detail-card"><span>Session ID</span><strong>{session.id}</strong></div>
-        <div className="detail-card"><span>Runs</span><strong>{(session.runs || []).length}</strong></div>
+        <div className="detail-card"><span>Turns</span><strong>{(session.turns || []).length}</strong></div>
       </div>
       <div className="detail-block">
         <h4>Conversation Timeline</h4>
-        <ConversationTimeline turns={turns} />
+        <ConversationTimeline turns={session.turns || []} />
       </div>
       <div className="detail-block">
-        <h4>Raw Session Data</h4>
-        <pre>{JSON.stringify(session, null, 2)}</pre>
+        <h4>Continue Session</h4>
+        <div className="message interviewer"><strong>Next Question</strong><p>{nextQuestion}</p></div>
+        <textarea value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="输入这轮回答，系统会基于上一轮回答动态生成下一问，并自动生成 critique 和 improved answer。" />
+        <button onClick={async () => {
+          await onContinueSession?.({ text: resumeText, answer });
+          setAnswer('');
+        }}>提交并继续对话</button>
       </div>
     </div>
   );
