@@ -1,35 +1,37 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import ResumeDetailPanel from './components/ResumeDetailPanel';
+import RunDetailPanel from './components/RunDetailPanel';
+import SessionDetailPanel from './components/SessionDetailPanel';
 
 type Section = { title: string; content: string[] };
-type Risk = { term: string; reason: string };
-type Retrieved = { id: number; content: string; score: number };
-
-type ParseResult = {
-  text: string;
-  sections: Section[];
-  risks: Risk[];
-  kbSize: number;
-};
+type ParseResult = { text: string; sections: Section[]; risks: { term: string; reason: string }[]; kbSize: number; vectorProvider?: string };
+type Tab = 'workspace' | 'resumes' | 'runs' | 'sessions';
 
 export default function App() {
   const [resumeText, setResumeText] = useState('');
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
-  const [query, setQuery] = useState('帮我针对字节实习生成面试追问');
-  const [retrieved, setRetrieved] = useState<Retrieved[]>([]);
-  const [questionGroups, setQuestionGroups] = useState<Record<string, string[]>>({});
-  const [answer, setAnswer] = useState('');
-  const [evaluation, setEvaluation] = useState<any>(null);
-  const [rewrite, setRewrite] = useState<{ concise: string; detailed: string } | null>(null);
+  const [goal, setGoal] = useState('请围绕项目经历生成可深挖的面试问题');
+  const [executionPlan, setExecutionPlan] = useState<any[]>([]);
+  const [agentOutputs, setAgentOutputs] = useState<any[]>([]);
   const [loading, setLoading] = useState<string | null>(null);
+  const [vectorProvider, setVectorProvider] = useState<string>('memory');
+  const [resumes, setResumes] = useState<any[]>([]);
+  const [runs, setRuns] = useState<any[]>([]);
+  const [sessions, setSessions] = useState<any[]>([]);
+  const [selectedResume, setSelectedResume] = useState<any | null>(null);
+  const [selectedRun, setSelectedRun] = useState<any | null>(null);
+  const [selectedSession, setSelectedSession] = useState<any | null>(null);
+  const [tab, setTab] = useState<Tab>('workspace');
 
   const stats = useMemo(() => {
     if (!parseResult) return null;
     return [
       ['分块数量', String(parseResult.kbSize)],
       ['风险术语', String(parseResult.risks.length)],
-      ['识别模块', String(parseResult.sections.length)]
+      ['识别模块', String(parseResult.sections.length)],
+      ['向量层', parseResult.vectorProvider || vectorProvider]
     ];
-  }, [parseResult]);
+  }, [parseResult, vectorProvider]);
 
   async function parseResume(file?: File) {
     setLoading('正在解析简历...');
@@ -40,192 +42,99 @@ export default function App() {
     const data = await res.json();
     setParseResult(data);
     setResumeText(data.text);
+    setVectorProvider(data.vectorProvider || 'memory');
     setLoading(null);
+    loadResumes();
   }
 
-  async function generateQuestions() {
+  async function runAgents() {
     if (!resumeText.trim()) return;
-    setLoading('正在生成追问...');
-    const res = await fetch('/api/questions', {
+    setLoading('正在运行 workflow...');
+    const res = await fetch('/api/agent-run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: resumeText, query })
+      body: JSON.stringify({ text: resumeText, goal, answer: '', history: [] })
     });
     const data = await res.json();
-    setRetrieved(data.retrieved);
-    setQuestionGroups(data.questions);
+    setExecutionPlan(data.executionPlan || []);
+    setAgentOutputs(data.agentOutputs || []);
+    setVectorProvider(data.vectorProvider || 'memory');
     setLoading(null);
+    loadRuns();
+    loadSessions();
   }
 
-  async function evaluateAnswer() {
-    setLoading('正在评估回答...');
-    const res = await fetch('/api/evaluate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ answer, retrieved })
-    });
-    setEvaluation(await res.json());
-    setLoading(null);
-  }
+  async function loadResumes() { const res = await fetch('/api/resumes'); const data = await res.json(); setResumes(data.resumes || []); }
+  async function loadRuns() { const res = await fetch('/api/runs'); const data = await res.json(); setRuns(data.runs || []); }
+  async function loadSessions() { const res = await fetch('/api/sessions'); const data = await res.json(); setSessions(data.sessions || []); }
+  async function openResume(id: string) { const res = await fetch(`/api/resumes/${id}`); const data = await res.json(); setSelectedResume(data.resume || null); }
+  async function openRun(id: string) { const res = await fetch(`/api/runs/${id}`); const data = await res.json(); setSelectedRun(data.run || null); }
+  async function openSession(id: string) { const res = await fetch(`/api/sessions/${id}`); const data = await res.json(); setSelectedSession(data.session || null); }
 
-  async function rewriteResume() {
-    setLoading('正在改写简历...');
-    const res = await fetch('/api/rewrite', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: resumeText })
-    });
-    setRewrite(await res.json());
-    setLoading(null);
-  }
+  useEffect(() => { loadResumes(); loadRuns(); loadSessions(); }, []);
 
   return (
     <div className="page">
       <header className="hero">
         <div>
           <p className="eyebrow">ResumePilot</p>
-          <h1>AI 简历拆解 + RAG 检索 + 面试 Agent 原型</h1>
-          <p className="subtitle">
-            这个版本故意把“RAG / 向量检索 / Agent 风格追问”做成可读代码，方便你 1 小时后自己继续拆。
-          </p>
+          <h1>ResumePilot Web App</h1>
+          <p className="subtitle">现在已经是更像产品原型的 Web App：有 Resume/Run/Session 列表与详情，也有 Session 对话时间线。</p>
         </div>
-        {stats && (
-          <div className="stats">
-            {stats.map(([label, value]) => (
-              <div key={label} className="stat-card">
-                <span>{label}</span>
-                <strong>{value}</strong>
-              </div>
-            ))}
-          </div>
-        )}
+        {stats && <div className="stats">{stats.map(([label, value]) => <div key={label} className="stat-card"><span>{label}</span><strong>{value}</strong></div>)}</div>}
       </header>
 
-      <main className="grid">
-        <section className="card tall">
-          <h2>1. 导入简历</h2>
-          <textarea
-            value={resumeText}
-            onChange={(e) => setResumeText(e.target.value)}
-            placeholder="粘贴你的简历文本，或者上传 PDF。"
-          />
-          <div className="row">
-            <label className="upload">
-              上传 PDF / TXT
-              <input
-                type="file"
-                accept=".pdf,.txt"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) parseResume(file);
-                }}
-              />
-            </label>
-            <button onClick={() => parseResume()}>解析文本</button>
-          </div>
-          {parseResult && (
-            <div className="section-list">
-              {parseResult.sections.map((section) => (
-                <div key={section.title} className="section-item">
-                  <h3>{section.title}</h3>
-                  <ul>
-                    {section.content.slice(0, 4).map((item, idx) => (
-                      <li key={idx}>{item}</li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
+      <section className="card intro-card">
+        <div className="tab-row">{['workspace', 'resumes', 'runs', 'sessions'].map((name) => <button key={name} className={tab === name ? 'tab active' : 'tab'} onClick={() => setTab(name as Tab)}>{name}</button>)}</div>
+      </section>
+
+      {tab === 'workspace' && (
+        <main className="grid grid-wide">
+          <section className="card tall">
+            <h2>Workspace</h2>
+            <textarea value={resumeText} onChange={(e) => setResumeText(e.target.value)} placeholder="粘贴简历文本或上传 PDF/TXT" />
+            <div className="row">
+              <label className="upload">上传 PDF / TXT<input type="file" accept=".pdf,.txt" onChange={(e) => { const file = e.target.files?.[0]; if (file) parseResume(file); }} /></label>
+              <button onClick={() => parseResume()}>解析文本</button>
+              <button onClick={runAgents}>运行 Workflow</button>
             </div>
-          )}
-        </section>
+            {parseResult && <pre>{JSON.stringify(parseResult, null, 2)}</pre>}
+          </section>
+          <section className="card"><h2>Goal</h2><input value={goal} onChange={(e) => setGoal(e.target.value)} /></section>
+          <section className="card"><h2>Execution Plan</h2>{executionPlan.length ? <pre>{JSON.stringify(executionPlan, null, 2)}</pre> : <p className="empty">运行后展示。</p>}</section>
+          <section className="card full"><h2>Agent Outputs</h2>{agentOutputs.length ? <pre>{JSON.stringify(agentOutputs, null, 2)}</pre> : <p className="empty">运行后展示。</p>}</section>
+        </main>
+      )}
 
-        <section className="card">
-          <h2>2. 风险术语扫描</h2>
-          <div className="risk-list">
-            {parseResult?.risks?.length ? (
-              parseResult.risks.map((risk) => (
-                <div className="risk-item" key={risk.term}>
-                  <strong>{risk.term}</strong>
-                  <p>{risk.reason}</p>
-                </div>
-              ))
-            ) : (
-              <p className="empty">解析后会在这里展示高风险术语。</p>
-            )}
-          </div>
-        </section>
+      {tab === 'resumes' && (
+        <main className="grid grid-wide detail-layout">
+          <section className="card">
+            <h2>Resume 列表页</h2>
+            <div className="risk-list">{resumes.length ? resumes.map((resume) => <div className="risk-item" key={resume.id}><strong>{resume.id}</strong><p>{resume.createdAt}</p><p>{(resume.text || '').slice(0, 120)}...</p><button onClick={() => openResume(resume.id)}>查看详情</button></div>) : <p className="empty">还没有简历记录。</p>}</div>
+          </section>
+          <section className="card tall"><ResumeDetailPanel resume={selectedResume} /></section>
+        </main>
+      )}
 
-        <section className="card">
-          <h2>3. RAG 检索与追问生成</h2>
-          <input value={query} onChange={(e) => setQuery(e.target.value)} />
-          <button onClick={generateQuestions}>生成追问</button>
-          <div className="retrieved">
-            {retrieved.map((item) => (
-              <div key={item.id} className="retrieved-item">
-                <span>Chunk #{item.id}</span>
-                <span>score {item.score}</span>
-                <p>{item.content}</p>
-              </div>
-            ))}
-          </div>
-          <div className="question-groups">
-            {Object.entries(questionGroups).map(([group, questions]) => (
-              <div key={group}>
-                <h3>{group}</h3>
-                <ul>
-                  {questions.map((q) => (
-                    <li key={q}>{q}</li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
-        </section>
+      {tab === 'runs' && (
+        <main className="grid grid-wide detail-layout">
+          <section className="card">
+            <h2>Runs 历史页</h2>
+            <div className="risk-list">{runs.length ? runs.map((run) => <div className="risk-item" key={run.id}><strong>{run.goal || 'No goal'}</strong><p>{run.createdAt}</p><p>{run.skill?.name || run.skillId || 'unknown skill'}</p><button onClick={() => openRun(run.id)}>查看详情</button></div>) : <p className="empty">还没有运行记录。</p>}</div>
+          </section>
+          <section className="card tall"><RunDetailPanel run={selectedRun} /></section>
+        </main>
+      )}
 
-        <section className="card">
-          <h2>4. 回答评估 Agent</h2>
-          <textarea
-            value={answer}
-            onChange={(e) => setAnswer(e.target.value)}
-            placeholder="输入你对某个问题的回答，例如：我在字节主要参与了 Slide SDK 多端适配..."
-          />
-          <button onClick={evaluateAnswer}>评估回答</button>
-          {evaluation && (
-            <div className="evaluation">
-              <div className="scores">
-                {Object.entries(evaluation.scores).map(([key, value]) => (
-                  <div key={key} className="score-card">
-                    <span>{key}</span>
-                    <strong>{String(value)}</strong>
-                  </div>
-                ))}
-              </div>
-              <ul>
-                {evaluation.feedback.map((item: string) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </section>
-
-        <section className="card full">
-          <h2>5. 双版本改写</h2>
-          <button onClick={rewriteResume}>生成精简版 / 详细版</button>
-          {rewrite && (
-            <div className="rewrite-grid">
-              <div>
-                <h3>精简版</h3>
-                <pre>{rewrite.concise}</pre>
-              </div>
-              <div>
-                <h3>详细版</h3>
-                <pre>{rewrite.detailed}</pre>
-              </div>
-            </div>
-          )}
-        </section>
-      </main>
+      {tab === 'sessions' && (
+        <main className="grid grid-wide detail-layout">
+          <section className="card">
+            <h2>Session 结构页</h2>
+            <div className="risk-list">{sessions.length ? sessions.map((session) => <div className="risk-item" key={session.id}><strong>{session.title}</strong><p>{session.createdAt}</p><p>runs: {session.runs}</p><button onClick={() => openSession(session.id)}>查看详情</button></div>) : <p className="empty">还没有 session 结构数据。</p>}</div>
+          </section>
+          <section className="card tall"><SessionDetailPanel session={selectedSession} /></section>
+        </main>
+      )}
 
       {loading && <div className="loading">{loading}</div>}
     </div>

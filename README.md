@@ -102,3 +102,115 @@ npm run dev
 - 设计多阶段 Agent 流程，将简历解析、检索召回、面试追问和结果评估拆分为独立角色，提高输出稳定性
 - 支持精简版 / 详细版简历改写与风险术语识别，帮助用户提升简历真实性与面试表达一致性
 
+
+
+## 通用化与多 Agent 目录
+
+当前版本已移除任何针对特定个人简历的硬编码逻辑，系统以'任意简历文本 -> 解析 -> 检索 -> 追问 -> 评估 -> 改写'的通用流程运行。
+
+多 agent 骨架目录：
+- server/agents/planner.js
+- server/agents/retriever.js
+- server/agents/interviewer.js
+- server/agents/critic.js
+- server/agents/writer.js
+
+聚合接口：
+- POST /api/agent-run
+
+建议你下一步把 prompts 从代码迁移到 server/prompts/ 目录，并把真实 vector DB 接到 retriever agent。
+
+
+## Skills 目录
+
+- `skills/interview-training/SKILL.md`
+- `skills/resume-analysis/SKILL.md`
+- `skills/resume-rewrite/SKILL.md`
+
+这些 skill 用于定义“什么时候触发 + 如何执行 + 输出原则”。
+
+## MCP server 骨架
+
+- `server/mcp/server.js`
+- `server/mcp/tools/parseResume.js`
+- `server/mcp/tools/searchResumeChunks.js`
+- `server/mcp/tools/evaluateAnswer.js`
+- `server/mcp/tools/rewriteResume.js`
+
+当前 MCP 层是一个本地骨架，已经具备：
+- tool list
+- tool call
+- input schema
+- 通用 resume parsing / retrieval / evaluate / rewrite 工具
+
+你下一步可以把它接到真正的 MCP server runtime，或者作为你自己的 tool registry 使用。
+
+
+## Qdrant 接入说明
+
+当前项目已经补上 `server/services/vectorStore.qdrant.js`，并支持通过环境变量切换 provider：
+
+```bash
+VECTOR_STORE_PROVIDER=qdrant
+QDRANT_URL=http://localhost:6333
+QDRANT_COLLECTION=resume_chunks
+QDRANT_VECTOR_SIZE=1024
+```
+
+可选：
+
+```bash
+QDRANT_API_KEY=your_key
+```
+
+说明：
+- 当前实现会自动创建 collection
+- 会按 `namespace` 写入不同简历的 chunk
+- 检索时会按 namespace 过滤，避免不同简历互相污染
+
+下一步建议：
+1. 启动本地 Qdrant
+2. 把 `/api/health` 和 `/api/agent-run` 跑通
+3. 再把历史运行与用户数据切到 SQLite + Prisma
+
+
+## SQLite + Prisma 接入准备
+
+当前项目已补充：
+- `prisma/schema.prisma`
+- `.env.example`
+- `server/services/database.prisma.template.js`
+
+### 数据模型
+- User
+- Resume
+- Session
+- Run
+- Message
+- RewriteHistory
+- JobDescription
+
+### 本地接入步骤
+1. 安装 Prisma 依赖
+2. 复制 `.env.example` 为 `.env`
+3. 生成 Prisma Client
+4. 执行 `db push`
+5. 将 `server/services/database.js` 替换为 Prisma 版本
+
+### 说明
+由于当前环境未直接提供 npm 命令，我保留了 Prisma 模板和 schema，等依赖安装完成后即可切换。
+
+
+## 数据库 provider 切换
+
+当前服务层已经支持：
+- `server/services/database.prisma.js`
+- `server/services/database.json.js`
+- `server/services/database.js` 作为统一入口
+
+### 选择逻辑
+- `APP_DB_PROVIDER=prisma`：强制使用 Prisma
+- `APP_DB_PROVIDER=json`：强制使用 JSON fallback
+- `APP_DB_PROVIDER=auto`（默认）：优先尝试 Prisma，失败则回退 JSON
+
+这意味着你现在可以先以 Web App 方式继续开发，Prisma 没装好时也不会阻塞整个系统运行。
