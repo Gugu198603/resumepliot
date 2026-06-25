@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { embedBatch, embedOne, chunkText } from './vectorStore.shared.js';
 
 const QDRANT_URL = process.env.QDRANT_URL || 'http://localhost:6333';
@@ -46,8 +47,8 @@ async function ensureCollection() {
 }
 
 function buildPointId(namespace, idx) {
-  const base = Buffer.from(`${namespace}:${idx}`).toString('base64').replace(/=/g, '');
-  return base.slice(0, 32);
+  const hex = createHash('md5').update(`${namespace}:${idx}`).digest('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
 }
 
 export async function buildKnowledgeBase(text, namespace = `resume_${Date.now()}`) {

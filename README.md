@@ -179,7 +179,7 @@ QDRANT_API_KEY=your_key
 当前项目已补充：
 - `prisma/schema.prisma`
 - `.env.example`
-- `server/services/database.prisma.template.js`
+- `server/services/database.prisma.js`（已接入统一入口，安装依赖后即可启用）
 
 ### 数据模型
 - User
@@ -191,14 +191,14 @@ QDRANT_API_KEY=your_key
 - JobDescription
 
 ### 本地接入步骤
-1. 安装 Prisma 依赖
-2. 复制 `.env.example` 为 `.env`
-3. 生成 Prisma Client
-4. 执行 `db push`
-5. 将 `server/services/database.js` 替换为 Prisma 版本
+1. 安装 Prisma 依赖：`npm install -D prisma && npm install @prisma/client`
+2. 确认 `.env` 含 `DATABASE_URL="file:./prisma/dev.db"`
+3. 生成 Prisma Client：`npx prisma generate`
+4. 创建/同步表结构：`npx prisma db push`
+5. 设置 `APP_DB_PROVIDER=prisma`（或保持 `auto`，安装好后会自动启用）
 
 ### 说明
-由于当前环境未直接提供 npm 命令，我保留了 Prisma 模板和 schema，等依赖安装完成后即可切换。
+`auto` 模式下若 Prisma 未安装，会静默回退到 JSON 文件，不阻塞系统运行。
 
 
 ## 数据库 provider 切换

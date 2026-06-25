@@ -4,8 +4,9 @@ import RunDetailPanel from './components/RunDetailPanel';
 import SessionDetailPanel from './components/SessionDetailPanel';
 
 type Section = { title: string; content: string[] };
-type ParseResult = { text: string; sections: Section[]; risks: { term: string; reason: string }[]; kbSize: number; vectorProvider?: string };
+type ParseResult = { resumeId?: string; text: string; sections: Section[]; risks: { term: string; reason: string }[]; kbSize: number; vectorProvider?: string };
 type Tab = 'workspace' | 'resumes' | 'runs' | 'sessions' | 'dashboard';
+type DisplayTab = 'overview' | 'resume' | 'retrieval' | 'agents' | 'history';
 
 export default function App() {
   const [resumeText, setResumeText] = useState('');
@@ -23,7 +24,9 @@ export default function App() {
   const [selectedSession, setSelectedSession] = useState<any | null>(null);
   const [dashboard, setDashboard] = useState<any | null>(null);
   const [qdrantReadiness, setQdrantReadiness] = useState<any | null>(null);
+  const [llmReadiness, setLlmReadiness] = useState<any | null>(null);
   const [tab, setTab] = useState<Tab>('workspace');
+  const [displayTab, setDisplayTab] = useState<DisplayTab>('overview');
   const [activeQuestion, setActiveQuestion] = useState('');
   const [answerDraft, setAnswerDraft] = useState('');
   const [retrievalPreview, setRetrievalPreview] = useState<any[]>([]);
@@ -34,8 +37,8 @@ export default function App() {
     if (!parseResult) return null;
     return [
       ['分块数量', String(parseResult.kbSize)],
-      ['风险术语', String(parseResult.risks.length)],
-      ['识别模块', String(parseResult.sections.length)],
+      ['风险术语', String((parseResult.risks || []).length)],
+      ['识别模块', String((parseResult.sections || []).length)],
       ['向量层', parseResult.vectorProvider || vectorProvider]
     ];
   }, [parseResult, vectorProvider]);
@@ -75,7 +78,7 @@ export default function App() {
     const res = await fetch('/api/agent-run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: resumeText, goal, answer: answerDraft, history: [], sessionId: selectedSession?.id || null })
+      body: JSON.stringify({ text: resumeText, goal, answer: answerDraft, history: [], sessionId: selectedSession?.id || null, resumeId: parseResult?.resumeId || selectedSession?.resumeId || null })
     });
     const data = await res.json();
     setExecutionPlan(data.executionPlan || []);
@@ -98,7 +101,7 @@ export default function App() {
     const res = await fetch(`/api/sessions/${selectedSession.id}/continue`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({ ...payload, resumeId: parseResult?.resumeId || selectedSession?.resumeId || null })
     });
     const data = await res.json();
     setSelectedSession(data.session || null);
@@ -117,6 +120,7 @@ export default function App() {
   async function loadSessions() { const res = await fetch('/api/sessions'); const data = await res.json(); setSessions(data.sessions || []); }
   async function loadDashboard() { const res = await fetch('/api/dashboard'); setDashboard(await res.json()); }
   async function loadQdrantReadiness() { const res = await fetch('/api/qdrant-readiness'); setQdrantReadiness(await res.json()); }
+  async function loadLlmReadiness() { const res = await fetch('/api/llm-readiness'); setLlmReadiness(await res.json()); }
   async function openResume(id: string) { const res = await fetch(`/api/resumes/${id}`); const data = await res.json(); setSelectedResume(data.resume || null); }
   async function openRun(id: string) { const res = await fetch(`/api/runs/${id}`); const data = await res.json(); setSelectedRun(data.run || null); }
   async function openSession(id: string) { const res = await fetch(`/api/sessions/${id}`); const data = await res.json(); setSelectedSession(data.session || null); }
@@ -125,7 +129,7 @@ export default function App() {
     const res = await fetch('/api/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: goal, goal })
+      body: JSON.stringify({ title: goal, goal, resumeId: parseResult?.resumeId || null })
     });
     const data = await res.json();
     await loadSessions();
@@ -133,7 +137,7 @@ export default function App() {
     setTab('workspace');
   }
 
-  useEffect(() => { loadResumes(); loadRuns(); loadSessions(); loadDashboard(); loadQdrantReadiness(); }, []);
+  useEffect(() => { loadResumes(); loadRuns(); loadSessions(); loadDashboard(); loadQdrantReadiness(); loadLlmReadiness(); }, []);
 
   return (
     <div className="page">
@@ -152,77 +156,168 @@ export default function App() {
 
       {tab === 'workspace' && (
         <main className="workspace-shell">
-          <section className="card workspace-left">
-            <h2>Session Control</h2>
-            <label className="label">当前 Goal</label>
-            <input value={goal} onChange={(e) => setGoal(e.target.value)} />
-            <label className="label">Resume Input</label>
-            <textarea value={resumeText} onChange={(e) => setResumeText(e.target.value)} placeholder="粘贴简历文本或上传 PDF/TXT" />
-            <div className="row wrap">
-              <label className="upload">上传 PDF / TXT<input type="file" accept=".pdf,.txt" onChange={(e) => { const file = e.target.files?.[0]; if (file) parseResume(file); }} /></label>
-              <button onClick={() => parseResume()}>解析文本</button>
-              <button onClick={runAgents}>运行 Workflow</button>
-              <button onClick={createSession}>新建 Session</button>
+          <aside className="card control-panel">
+            <div className="panel-heading">
+              <p className="eyebrow">Control</p>
+              <h2>操作台</h2>
+              <p>从上到下完成导入、设定目标、输入回答和运行 workflow。</p>
             </div>
-            <div className="detail-block compact-block">
-              <h4>当前 Session</h4>
+
+            <div className="control-section">
+              <div className="step-label"><span>1</span><strong>导入简历</strong></div>
+              <textarea className="resume-input" value={resumeText} onChange={(e) => setResumeText(e.target.value)} placeholder="粘贴简历文本，或者上传 PDF/TXT。" />
+              <div className="action-row">
+                <label className="upload">上传 PDF / TXT<input type="file" accept=".pdf,.txt" onChange={(e) => { const file = e.target.files?.[0]; if (file) parseResume(file); }} /></label>
+                <button onClick={() => parseResume()}>解析简历</button>
+              </div>
+            </div>
+
+            <div className="control-section">
+              <div className="step-label"><span>2</span><strong>设定目标</strong></div>
+              <input value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="例如：围绕项目经历生成深挖问题" />
+            </div>
+
+            <div className="control-section">
+              <div className="step-label"><span>3</span><strong>回答当前问题</strong></div>
+              <textarea className="answer-input" value={answerDraft} onChange={(e) => setAnswerDraft(e.target.value)} placeholder="在这里输入你的回答，然后运行 Workflow 或继续 Session。" />
+            </div>
+
+            <div className="control-section">
+              <div className="step-label"><span>4</span><strong>执行动作</strong></div>
+              <div className="primary-actions">
+                <button onClick={runAgents}>运行 Workflow</button>
+                <button onClick={() => continueSession({ text: resumeText, answer: answerDraft })} disabled={!selectedSession}>继续 Session</button>
+                <button className="secondary-button" onClick={createSession}>新建 Session</button>
+              </div>
+            </div>
+
+            <div className="session-card">
+              <span>当前 Session</span>
               {selectedSession ? (
-                <div className="session-summary">
+                <>
                   <strong>{selectedSession.title}</strong>
-                  <p>turns: {(selectedSession.turns || []).length}</p>
-                </div>
-              ) : <p className="empty">还未选中 session。</p>}
+                  <p>{(selectedSession.turns || []).length} turns</p>
+                </>
+              ) : (
+                <p>尚未选择 session。</p>
+              )}
             </div>
-          </section>
+          </aside>
 
-          <section className="card workspace-center">
-            <h2>Active Interview</h2>
-            <div className="message interviewer"><strong>Current Question</strong><p>{activeQuestion || '先运行 workflow 或进入某个 session。'}</p></div>
-            <label className="label">Your Answer</label>
-            <textarea value={answerDraft} onChange={(e) => setAnswerDraft(e.target.value)} placeholder="在这里输入你的回答，然后运行 Workflow 或继续 Session。" />
-            <div className="row wrap">
-              <button onClick={runAgents}>用当前回答跑一次 Workflow</button>
-              <button onClick={() => continueSession({ text: resumeText, answer: answerDraft })} disabled={!selectedSession}>继续当前 Session</button>
-            </div>
-            <div className="detail-grid one-col">
-              <div className="message critic">
-                <strong>Critique</strong>
-                {activeCritique.length ? <ul>{activeCritique.map((item, idx) => <li key={idx}>{item}</li>)}</ul> : <p>暂无批注。</p>}
+          <section className="display-panel">
+            <div className="display-header card">
+              <div>
+                <p className="eyebrow">Result</p>
+                <h2>展示界面</h2>
+                <p>右侧只看结果和过程，默认聚焦当前问题、批注和改写答案。</p>
               </div>
-              <div className="message writer">
-                <strong>Improved Answer</strong>
-                <p>{activeImproved || '暂无改写结果。'}</p>
+              <div className="status-strip">
+                {(stats || [
+                  ['简历状态', resumeText.trim() ? '已输入' : '待输入'],
+                  ['Workflow', executionPlan.length ? `${executionPlan.length} steps` : '待运行'],
+                  ['向量层', vectorProvider],
+                  ['Session', selectedSession ? `${(selectedSession.turns || []).length} turns` : '未选择']
+                ]).map(([label, value]) => (
+                  <div key={label} className="status-card">
+                    <span>{label}</span>
+                    <strong>{value}</strong>
+                  </div>
+                ))}
               </div>
             </div>
-          </section>
 
-          <section className="card workspace-right">
-            <h2>Agent Collaboration</h2>
-            <div className="agent-stack">
-              {agentCards.map((card) => (
-                <div className="agent-card" key={card.name}>
-                  <div className="agent-head">
-                    <strong>{card.name}</strong>
-                    <span>{card.output ? 'active' : 'idle'}</span>
-                  </div>
-                  <pre>{card.output ? JSON.stringify(card.output, null, 2) : 'No output yet.'}</pre>
-                </div>
-              ))}
-            </div>
-          </section>
+            <div className="card display-tabs-card">
+              <div className="display-tabs">
+                {[
+                  ['overview', '总览'],
+                  ['resume', '简历解析'],
+                  ['retrieval', '检索上下文'],
+                  ['agents', 'Agent Trace'],
+                  ['history', '历史记录']
+                ].map(([key, label]) => (
+                  <button key={key} className={displayTab === key ? 'tab active' : 'tab'} onClick={() => setDisplayTab(key as DisplayTab)}>{label}</button>
+                ))}
+              </div>
 
-          <section className="card workspace-bottom">
-            <h2>Retrieval & Context</h2>
-            <div className="retrieval-grid">
-              {retrievalPreview.length ? retrievalPreview.map((item, idx) => (
-                <div className="retrieval-card" key={idx}>
-                  <div className="retrieval-meta">
-                    <span>{item.source || 'resume'}</span>
-                    <strong>score {item.score}</strong>
+              {displayTab === 'overview' && (
+                <div className="display-section">
+                  <div className="overview-grid">
+                    <div className="detail-card"><span>执行计划</span><strong>{executionPlan.length ? `${executionPlan.length} steps` : '未运行'}</strong></div>
+                    <div className="detail-card"><span>Agent 输出</span><strong>{agentOutputs.length}</strong></div>
+                    <div className="detail-card"><span>检索片段</span><strong>{retrievalPreview.length}</strong></div>
+                    <div className="detail-card"><span>历史 Runs</span><strong>{runs.length}</strong></div>
                   </div>
-                  <p>{item.content}</p>
+                  <div className="trace-row compact-trace">
+                    {agentCards.map((card) => (
+                      <div className={card.output ? 'trace-node active' : 'trace-node'} key={card.name}>
+                        <span>{card.name}</span>
+                        <small>{card.output ? 'active' : 'idle'}</small>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              )) : <p className="empty">运行 workflow 或继续 session 后，这里会展示 resume + session history 的联合检索结果。</p>}
+              )}
+
+              {displayTab === 'resume' && (
+                <div className="display-section">
+                  {parseResult ? (
+                    <div className="section-list compact">
+                      {parseResult.sections.map((section) => (
+                        <div key={section.title} className="section-item">
+                          <h5>{section.title}</h5>
+                          <ul>{section.content.slice(0, 5).map((item, idx) => <li key={idx}>{item}</li>)}</ul>
+                        </div>
+                      ))}
+                    </div>
+                  ) : <p className="empty">解析简历后，这里会展示识别出的模块和风险术语。</p>}
+                  {parseResult?.risks?.length ? <div className="chip-wrap">{parseResult.risks.map((risk) => <span key={risk.term} className="chip danger">{risk.term}</span>)}</div> : null}
+                </div>
+              )}
+
+              {displayTab === 'retrieval' && (
+                <div className="display-section">
+                  <div className="retrieval-grid">
+                    {retrievalPreview.length ? retrievalPreview.map((item, idx) => (
+                      <div className="retrieval-card" key={idx}>
+                        <div className="retrieval-meta">
+                          <span>{item.source || 'resume'}</span>
+                          <strong>score {item.score}</strong>
+                        </div>
+                        <p>{item.content}</p>
+                      </div>
+                    )) : <p className="empty">运行 workflow 或继续 session 后，这里会展示 resume + session history 的联合检索结果。</p>}
+                  </div>
+                </div>
+              )}
+
+              {displayTab === 'agents' && (
+                <div className="display-section">
+                  <div className="agent-stack">
+                    {agentCards.map((card) => (
+                      <div className="agent-card" key={card.name}>
+                        <div className="agent-head">
+                          <strong>{card.name}</strong>
+                          <span>{card.output ? 'active' : 'idle'}</span>
+                        </div>
+                        <pre>{card.output ? JSON.stringify(card.output, null, 2) : 'No output yet.'}</pre>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {displayTab === 'history' && (
+                <div className="display-section history-grid">
+                  <div>
+                    <h4>最近 Runs</h4>
+                    <div className="risk-list">{runs.slice(0, 4).map((run) => <div className="risk-item" key={run.id}><strong>{run.goal || 'No goal'}</strong><p>{run.createdAt}</p></div>)}</div>
+                  </div>
+                  <div>
+                    <h4>Sessions</h4>
+                    <div className="risk-list">{sessions.slice(0, 4).map((session) => <div className="risk-item" key={session.id}><strong>{session.title}</strong><p>turns: {(session.turns || []).length}</p></div>)}</div>
+                  </div>
+                </div>
+              )}
             </div>
           </section>
         </main>
@@ -282,6 +377,18 @@ export default function App() {
                     </div>
                   ) : <p className="empty">加载中...</p>}
                   {qdrantReadiness?.notes?.length ? <ul>{qdrantReadiness.notes.map((note: string) => <li key={note}>{note}</li>)}</ul> : null}
+                </div>
+                <div className="detail-block">
+                  <h4>LLM Readiness</h4>
+                  {llmReadiness ? (
+                    <div className="detail-grid two-col">
+                      <div className="detail-card"><span>Mode</span><strong>{llmReadiness.mode}</strong></div>
+                      <div className="detail-card"><span>Configured</span><strong>{String(llmReadiness.configured)}</strong></div>
+                      <div className="detail-card"><span>Model</span><strong>{llmReadiness.model}</strong></div>
+                      <div className="detail-card"><span>Base URL</span><strong>{llmReadiness.baseUrl}</strong></div>
+                    </div>
+                  ) : <p className="empty">加载中...</p>}
+                  {llmReadiness?.notes?.length ? <ul>{llmReadiness.notes.map((note: string) => <li key={note}>{note}</li>)}</ul> : null}
                 </div>
                 <div className="detail-block">
                   <h4>Eval Notes</h4>

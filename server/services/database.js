@@ -34,6 +34,16 @@ export async function saveResumeRecord(record) {
   return await provider.saveResumeRecord(record);
 }
 
+export async function listResumes() {
+  const provider = await getProvider();
+  return await provider.listResumes();
+}
+
+export async function getResume(id) {
+  const provider = await getProvider();
+  return await provider.getResume(id);
+}
+
 export async function saveRunRecord(record) {
   const provider = await getProvider();
   return await provider.saveRunRecord(record);
@@ -42,6 +52,41 @@ export async function saveRunRecord(record) {
 export async function listRecentRuns(limit = 10) {
   const provider = await getProvider();
   return await provider.listRecentRuns(limit);
+}
+
+export async function getRun(id) {
+  const provider = await getProvider();
+  return await provider.getRun(id);
+}
+
+export async function createSession(attrs) {
+  const provider = await getProvider();
+  return await provider.createSession(attrs);
+}
+
+export async function findOrCreateSessionByGoal(goal, attrs) {
+  const provider = await getProvider();
+  return await provider.findOrCreateSessionByGoal(goal, attrs);
+}
+
+export async function listSessions() {
+  const provider = await getProvider();
+  return await provider.listSessions();
+}
+
+export async function getSession(id) {
+  const provider = await getProvider();
+  return await provider.getSession(id);
+}
+
+export async function appendSessionTurn(sessionId, turn, runId) {
+  const provider = await getProvider();
+  return await provider.appendSessionTurn(sessionId, turn, runId);
+}
+
+export async function getDashboardSnapshot() {
+  const provider = await getProvider();
+  return await provider.getDashboardSnapshot();
 }
 
 export async function getDatabaseOverview() {
