@@ -6,7 +6,7 @@ import SessionDetailPanel from './components/SessionDetailPanel';
 type Section = { title: string; content: string[] };
 type ParseResult = { resumeId?: string; text: string; sections: Section[]; risks: { term: string; reason: string }[]; kbSize: number; vectorProvider?: string };
 type Tab = 'workspace' | 'resumes' | 'runs' | 'sessions' | 'dashboard';
-type DisplayTab = 'overview' | 'resume' | 'retrieval' | 'agents' | 'history';
+type DisplayTab = 'overview' | 'resume' | 'retrieval' | 'agents' | 'history' | 'jd';
 
 export default function App() {
   const [resumeText, setResumeText] = useState('');
@@ -32,6 +32,8 @@ export default function App() {
   const [retrievalPreview, setRetrievalPreview] = useState<any[]>([]);
   const [activeCritique, setActiveCritique] = useState<string[]>([]);
   const [activeImproved, setActiveImproved] = useState('');
+  const [jdText, setJdText] = useState('');
+  const [jdResult, setJdResult] = useState<any | null>(null);
 
   const stats = useMemo(() => {
     if (!parseResult) return null;
@@ -113,6 +115,19 @@ export default function App() {
     setLoading(null);
     await loadSessions();
     await loadDashboard();
+  }
+
+  async function matchJd() {
+    if (!jdText.trim() || !resumeText.trim()) return;
+    setLoading('正在对比岗位描述...');
+    const res = await fetch('/api/jd-match', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: resumeText, resumeId: parseResult?.resumeId || selectedSession?.resumeId || null, jdText })
+    });
+    const data = await res.json();
+    setJdResult(data.error ? null : data);
+    setLoading(null);
   }
 
   async function loadResumes() { const res = await fetch('/api/resumes'); const data = await res.json(); setResumes(data.resumes || []); }
@@ -233,6 +248,7 @@ export default function App() {
                   ['resume', '简历解析'],
                   ['retrieval', '检索上下文'],
                   ['agents', 'Agent Trace'],
+                  ['jd', 'JD 对比'],
                   ['history', '历史记录']
                 ].map(([key, label]) => (
                   <button key={key} className={displayTab === key ? 'tab active' : 'tab'} onClick={() => setDisplayTab(key as DisplayTab)}>{label}</button>
@@ -303,6 +319,43 @@ export default function App() {
                       </div>
                     ))}
                   </div>
+                </div>
+              )}
+
+              {displayTab === 'jd' && (
+                <div className="display-section">
+                  <div className="jd-input-row">
+                    <textarea className="jd-input" value={jdText} onChange={(e) => setJdText(e.target.value)} placeholder="粘贴目标岗位的 JD（每行一条要求效果最佳），点击对比。" />
+                    <button onClick={matchJd} disabled={!jdText.trim() || !resumeText.trim()}>对比岗位匹配度</button>
+                  </div>
+                  {jdResult ? (
+                    <div className="jd-result">
+                      <div className="jd-score-row">
+                        <div className="jd-score-ring">
+                          <strong>{jdResult.matchScore}</strong>
+                          <small>/ 100</small>
+                        </div>
+                        <div className="jd-score-meta">
+                          <p>匹配 <strong>{(jdResult.matched || []).length}</strong> 项 · 缺口 <strong>{(jdResult.gaps || []).length}</strong> 项</p>
+                          <span className={jdResult.mode === 'live' ? 'chip ok' : 'chip'}>{jdResult.mode === 'live' ? 'LLM 分析' : '向量兜底'}</span>
+                        </div>
+                      </div>
+                      <div className="jd-columns">
+                        <div className="jd-col">
+                          <h5>已匹配</h5>
+                          {(jdResult.matched || []).length ? <ul>{jdResult.matched.map((m: string, i: number) => <li key={i} className="jd-matched">{m}</li>)}</ul> : <p className="empty">暂无匹配项。</p>}
+                        </div>
+                        <div className="jd-col">
+                          <h5>缺口</h5>
+                          {(jdResult.gaps || []).length ? <ul>{jdResult.gaps.map((g: string, i: number) => <li key={i} className="jd-gap">{g}</li>)}</ul> : <p className="empty">无明显缺口。</p>}
+                        </div>
+                      </div>
+                      <div className="jd-suggestions">
+                        <h5>简历补强建议</h5>
+                        <ul>{(jdResult.suggestions || []).map((s: string, i: number) => <li key={i}>{s}</li>)}</ul>
+                      </div>
+                    </div>
+                  ) : <p className="empty">粘贴岗位描述并点击对比，这里会展示匹配度、匹配点、缺口与补强建议。</p>}
                 </div>
               )}
 

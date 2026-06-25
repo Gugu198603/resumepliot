@@ -10,6 +10,7 @@ import { retrieveContext } from './agents/retriever.js';
 import { generateInterviewQuestions } from './agents/interviewer.js';
 import { critiqueAnswer } from './agents/critic.js';
 import { rewriteArtifacts } from './agents/writer.js';
+import { matchJobDescription } from './agents/jdMatcher.js';
 import { routeSkill } from './router/skillRouter.js';
 import { handleMcpRequest } from './mcp/runtime.js';
 import { listTools } from './mcp/server.js';
@@ -276,6 +277,23 @@ app.post('/api/rewrite', async (req, res) => {
     const base = rewriteResume(text || '');
     const enhanced = await rewriteArtifacts({ text: text || '', answer, feedback });
     res.json({ ...base, improvedAnswer: enhanced.improvedAnswer, mode: enhanced.mode });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/jd-match', async (req, res) => {
+  try {
+    const { resumeId = null, jdText = '', text = '' } = req.body || {};
+    if (!jdText.trim()) return res.status(400).json({ error: 'jdText is required' });
+    const persistedResume = resumeId ? await getResume(resumeId) : null;
+    const resumeText = persistedResume?.text || text || '';
+    const resumeChunks = persistedResume?.chunks || [];
+    if (!resumeText.trim() && !resumeChunks.length) {
+      return res.status(400).json({ error: 'No resume content. Provide resumeId or text.' });
+    }
+    const result = await matchJobDescription({ resumeText, resumeChunks, jdText });
+    res.json({ resumeId: persistedResume?.id || resumeId || null, ...result });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
