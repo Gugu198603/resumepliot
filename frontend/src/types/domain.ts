@@ -136,6 +136,8 @@ export interface JdCoverageItem {
 
 export interface JdMatchResult {
   resumeId?: string | null;
+  jobId?: string | null;
+  matchId?: string | null;
   matchScore: number;
   coverage: JdCoverageItem[];
   matched: string[];
@@ -143,6 +145,27 @@ export interface JdMatchResult {
   suggestions: string[];
   mode: LlmMode;
   llm?: LlmMeta;
+}
+
+export interface JobDescription {
+  id: string;
+  title?: string | null;
+  company?: string | null;
+  source?: string | null;
+  sourceUrl?: string | null;
+  text: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface JobMatch {
+  id: string;
+  jobId: string;
+  resumeId?: string | null;
+  matchScore: number;
+  result?: JdMatchResult | null;
+  job?: JobDescription | null;
+  createdAt: string;
 }
 
 export interface LlmReadiness {
@@ -203,4 +226,24 @@ export interface Dashboard {
   evalNotes?: string[];
   trend?: DashboardTrendItem[];
   retrievalSamples?: DashboardRetrievalSample[];
+}
+
+export interface LlmMetricBucket {
+  calls: number;
+  liveCalls: number;
+  fallbackCalls: number;
+  errorCalls: number;
+  totalLatencyMs: number;
+  avgLatencyMs: number;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  costUsd: number;
+}
+
+export interface LlmMetrics {
+  overview: LlmMetricBucket & { runs: number; runsWithLlm: number; latestRunAt: string | null };
+  byModel: (LlmMetricBucket & { model: string })[];
+  byAgent: (LlmMetricBucket & { agent: string })[];
+  pricing: { source: 'env' | 'default'; unit: string; table: Record<string, { prompt: number; completion: number }> };
 }

@@ -110,16 +110,20 @@ export async function getRun(id) {
 
 export async function createSession({ title = 'New Session', goal = title, resumeId = null } = {}) {
   const client = await getPrisma();
-  const session = await client.session.create({ data: { title, goal } });
-  return { ...session, resumeId, turns: [], runs: [] };
+  const session = await client.session.create({ data: { title, goal, resumeId } });
+  return { ...session, turns: [], runs: [] };
 }
 
 export async function findOrCreateSessionByGoal(goal, attrs = {}) {
   const client = await getPrisma();
   const title = goal || 'Default Session';
   let session = await client.session.findFirst({ where: { OR: [{ title }, { goal: title }] } });
-  if (!session) session = await client.session.create({ data: { title, goal: title } });
-  return { ...session, resumeId: attrs.resumeId || null, turns: [], runs: [] };
+  if (!session) {
+    session = await client.session.create({ data: { title, goal: title, resumeId: attrs.resumeId || null } });
+  } else if (attrs.resumeId && !session.resumeId) {
+    session = await client.session.update({ where: { id: session.id }, data: { resumeId: attrs.resumeId } });
+  }
+  return { ...session, turns: [], runs: [] };
 }
 
 export async function listSessions() {
@@ -148,6 +152,12 @@ function mapSession(record) {
 export async function appendSessionTurn(sessionId, turn, runId = null) {
   const client = await getPrisma();
   await client.message.create({ data: { sessionId, role: 'turn', content: JSON.stringify(turn) } });
+  if (turn.resumeId) {
+    const current = await client.session.findUnique({ where: { id: sessionId } });
+    if (current && !current.resumeId) {
+      await client.session.update({ where: { id: sessionId }, data: { resumeId: turn.resumeId } });
+    }
+  }
   return await getSession(sessionId);
 }
 
@@ -164,6 +174,82 @@ export async function getDatabaseOverview() {
     client.session.count()
   ]);
   return { provider: 'prisma', resumes, runs, sessions };
+}
+
+function mapJob(record) {
+  if (!record) return null;
+  return {
+    id: record.id,
+    title: record.title,
+    company: record.company,
+    location: record.location,
+    source: record.source,
+    sourceUrl: record.sourceUrl,
+    text: record.originalText,
+    parsed: fromJsonString(record.parsedJson, null),
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt
+  };
+}
+
+export async function saveJobDescription(record) {
+  const client = await getPrisma();
+  const data = {
+    title: record.title || null,
+    company: record.company || null,
+    location: record.location || null,
+    source: record.source || 'manual',
+    sourceUrl: record.sourceUrl || null,
+    dedupeKey: record.dedupeKey || null,
+    originalText: record.text || record.originalText || '',
+    parsedJson: toJsonString(record.parsed || null)
+  };
+  if (data.dedupeKey) {
+    return mapJob(await client.jobDescription.upsert({
+      where: { dedupeKey: data.dedupeKey },
+      update: { title: data.title, company: data.company, location: data.location, sourceUrl: data.sourceUrl, originalText: data.originalText, parsedJson: data.parsedJson },
+      create: data
+    }));
+  }
+  return mapJob(await client.jobDescription.create({ data }));
+}
+
+export async function listJobDescriptions(limit = 50) {
+  const client = await getPrisma();
+  const rows = await client.jobDescription.findMany({ orderBy: { createdAt: 'desc' }, take: limit });
+  return rows.map(mapJob);
+}
+
+export async function getJobDescription(id) {
+  const client = await getPrisma();
+  return mapJob(await client.jobDescription.findUnique({ where: { id } }));
+}
+
+export async function saveJobMatch(record) {
+  const client = await getPrisma();
+  const row = await client.jobMatch.create({
+    data: {
+      jobId: record.jobId,
+      resumeId: record.resumeId || null,
+      matchScore: Number.isFinite(record.matchScore) ? Math.round(record.matchScore) : 0,
+      resultJson: toJsonString(record.result || null)
+    }
+  });
+  return { id: row.id, jobId: row.jobId, resumeId: row.resumeId, matchScore: row.matchScore, result: record.result || null, createdAt: row.createdAt };
+}
+
+export async function listJobMatches(limit = 50) {
+  const client = await getPrisma();
+  const rows = await client.jobMatch.findMany({ orderBy: { createdAt: 'desc' }, take: limit, include: { job: true } });
+  return rows.map((row) => ({
+    id: row.id,
+    jobId: row.jobId,
+    resumeId: row.resumeId,
+    matchScore: row.matchScore,
+    result: fromJsonString(row.resultJson, null),
+    job: mapJob(row.job),
+    createdAt: row.createdAt
+  }));
 }
 
 export function isPrismaAvailable() {

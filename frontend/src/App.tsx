@@ -7,6 +7,8 @@ import type {
   Dashboard,
   ExecutionStep,
   JdMatchResult,
+  JobMatch,
+  LlmMetrics,
   LlmReadiness,
   ParseResult,
   QdrantReadiness,
@@ -36,6 +38,7 @@ export default function App() {
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [qdrantReadiness, setQdrantReadiness] = useState<QdrantReadiness | null>(null);
   const [llmReadiness, setLlmReadiness] = useState<LlmReadiness | null>(null);
+  const [llmMetrics, setLlmMetrics] = useState<LlmMetrics | null>(null);
   const [tab, setTab] = useState<Tab>('workspace');
   const [displayTab, setDisplayTab] = useState<DisplayTab>('overview');
   const [activeQuestion, setActiveQuestion] = useState('');
@@ -45,6 +48,8 @@ export default function App() {
   const [activeImproved, setActiveImproved] = useState('');
   const [jdText, setJdText] = useState('');
   const [jdResult, setJdResult] = useState<JdMatchResult | null>(null);
+  const [jobMatches, setJobMatches] = useState<JobMatch[]>([]);
+  const [jdUrl, setJdUrl] = useState('');
 
   const stats = useMemo(() => {
     if (!parseResult) return null;
@@ -105,6 +110,7 @@ export default function App() {
     await loadRuns();
     await loadSessions();
     await loadDashboard();
+    await loadLlmMetrics();
     if (data.sessionId) openSession(data.sessionId);
   }
 
@@ -139,6 +145,24 @@ export default function App() {
     const data = await res.json();
     setJdResult(data.error ? null : data);
     setLoading(null);
+    loadJobMatches();
+  }
+
+  async function loadJobMatches() { const res = await fetch('/api/job-matches'); const data = await res.json(); setJobMatches(data.matches || []); }
+
+  async function fetchJdFromUrl() {
+    if (!jdUrl.trim()) return;
+    setLoading('正在抓取岗位 JD...');
+    const res = await fetch('/api/jobs/fetch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source: 'url', config: { url: jdUrl.trim() } })
+    });
+    const data = await res.json();
+    const job = data.jobs?.[0];
+    if (job?.text) setJdText(job.text);
+    setLoading(null);
+    if (data.errors?.length) alert(`抓取失败：${data.errors[0].error}\n该页面可能需要 JS 渲染或有反爬，建议手动粘贴 JD。`);
   }
 
   async function loadResumes() { const res = await fetch('/api/resumes'); const data = await res.json(); setResumes(data.resumes || []); }
@@ -147,6 +171,7 @@ export default function App() {
   async function loadDashboard() { const res = await fetch('/api/dashboard'); setDashboard(await res.json()); }
   async function loadQdrantReadiness() { const res = await fetch('/api/qdrant-readiness'); setQdrantReadiness(await res.json()); }
   async function loadLlmReadiness() { const res = await fetch('/api/llm-readiness'); setLlmReadiness(await res.json()); }
+  async function loadLlmMetrics() { const res = await fetch('/api/llm-metrics'); setLlmMetrics(await res.json()); }
   async function openResume(id: string) { const res = await fetch(`/api/resumes/${id}`); const data = await res.json(); setSelectedResume(data.resume || null); }
   async function openRun(id: string) { const res = await fetch(`/api/runs/${id}`); const data = await res.json(); setSelectedRun(data.run || null); }
   async function openSession(id: string) { const res = await fetch(`/api/sessions/${id}`); const data = await res.json(); setSelectedSession(data.session || null); }
@@ -163,7 +188,7 @@ export default function App() {
     setTab('workspace');
   }
 
-  useEffect(() => { loadResumes(); loadRuns(); loadSessions(); loadDashboard(); loadQdrantReadiness(); loadLlmReadiness(); }, []);
+  useEffect(() => { loadResumes(); loadRuns(); loadSessions(); loadDashboard(); loadQdrantReadiness(); loadLlmReadiness(); loadLlmMetrics(); loadJobMatches(); }, []);
 
   return (
     <div className="page">
@@ -336,6 +361,10 @@ export default function App() {
               {displayTab === 'jd' && (
                 <div className="display-section">
                   <div className="jd-input-row">
+                    <input className="jd-url-input" value={jdUrl} onChange={(e) => setJdUrl(e.target.value)} placeholder="粘贴岗位链接，自动抓取 JD 正文（动态渲染站点可能抓不到）。" />
+                    <button onClick={fetchJdFromUrl} disabled={!jdUrl.trim()}>抓取链接</button>
+                  </div>
+                  <div className="jd-input-row">
                     <textarea className="jd-input" value={jdText} onChange={(e) => setJdText(e.target.value)} placeholder="粘贴目标岗位的 JD（每行一条要求效果最佳），点击对比。" />
                     <button onClick={matchJd} disabled={!jdText.trim() || !resumeText.trim()}>对比岗位匹配度</button>
                   </div>
@@ -367,6 +396,20 @@ export default function App() {
                       </div>
                     </div>
                   ) : <p className="empty">粘贴岗位描述并点击对比，这里会展示匹配度、匹配点、缺口与补强建议。</p>}
+                  <div className="jd-history">
+                    <h5>历史匹配记录</h5>
+                    {jobMatches.length ? (
+                      <div className="risk-list">
+                        {jobMatches.map((m) => (
+                          <div className="risk-item" key={m.id}>
+                            <strong>{m.job?.title || m.job?.company || '未命名岗位'} · {m.matchScore}/100</strong>
+                            <p>{m.createdAt}</p>
+                            <p>{String(m.job?.text || '').slice(0, 100)}...</p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : <p className="empty">还没有匹配历史。</p>}
+                  </div>
                 </div>
               )}
 
@@ -453,6 +496,67 @@ export default function App() {
                     </div>
                   ) : <p className="empty">加载中...</p>}
                   {llmReadiness?.notes?.length ? <ul>{llmReadiness.notes.map((note: string) => <li key={note}>{note}</li>)}</ul> : null}
+                </div>
+                <div className="detail-block">
+                  <h4>LLM Cost & Latency</h4>
+                  {llmMetrics ? (
+                    <>
+                      <div className="detail-grid two-col">
+                        <div className="detail-card"><span>Runs (with LLM)</span><strong>{llmMetrics.overview.runs} / {llmMetrics.overview.runsWithLlm}</strong></div>
+                        <div className="detail-card"><span>LLM Calls</span><strong>{llmMetrics.overview.calls}</strong></div>
+                        <div className="detail-card"><span>Live / Fallback</span><strong>{llmMetrics.overview.liveCalls} / {llmMetrics.overview.fallbackCalls}</strong></div>
+                        <div className="detail-card"><span>Errors</span><strong>{llmMetrics.overview.errorCalls}</strong></div>
+                        <div className="detail-card"><span>Total Latency</span><strong>{llmMetrics.overview.totalLatencyMs} ms</strong></div>
+                        <div className="detail-card"><span>Avg Latency</span><strong>{llmMetrics.overview.avgLatencyMs} ms</strong></div>
+                        <div className="detail-card"><span>Total Tokens</span><strong>{llmMetrics.overview.totalTokens}</strong></div>
+                        <div className="detail-card"><span>Est. Cost</span><strong>${llmMetrics.overview.costUsd.toFixed(4)}</strong></div>
+                        <div className="detail-card"><span>Latest Run</span><strong>{llmMetrics.overview.latestRunAt || '—'}</strong></div>
+                      </div>
+                      {llmMetrics.overview.calls === 0 ? (
+                        <p className="empty">还没有采集到 LLM 调用（fallback 模式不产生 token/成本）。配置 OPENAI_API_KEY 并运行 workflow 后即可看到成本与延迟聚合。</p>
+                      ) : (
+                        <>
+                          <h5>按模型</h5>
+                          <table className="llm-metric-table">
+                            <thead>
+                              <tr><th>Model</th><th>Calls</th><th>Live</th><th>Tokens</th><th>Avg ms</th><th>Cost</th></tr>
+                            </thead>
+                            <tbody>
+                              {llmMetrics.byModel.map((row) => (
+                                <tr key={row.model}>
+                                  <td>{row.model}</td>
+                                  <td>{row.calls}</td>
+                                  <td>{row.liveCalls}</td>
+                                  <td>{row.totalTokens}</td>
+                                  <td>{row.avgLatencyMs}</td>
+                                  <td>${row.costUsd.toFixed(4)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          <h5>按 Agent</h5>
+                          <table className="llm-metric-table">
+                            <thead>
+                              <tr><th>Agent</th><th>Calls</th><th>Errors</th><th>Tokens</th><th>Total ms</th><th>Cost</th></tr>
+                            </thead>
+                            <tbody>
+                              {llmMetrics.byAgent.map((row) => (
+                                <tr key={row.agent}>
+                                  <td>{row.agent}</td>
+                                  <td>{row.calls}</td>
+                                  <td>{row.errorCalls}</td>
+                                  <td>{row.totalTokens}</td>
+                                  <td>{row.totalLatencyMs}</td>
+                                  <td>${row.costUsd.toFixed(4)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </>
+                      )}
+                      <p className="metric-footnote">定价来源：{llmMetrics.pricing.source === 'env' ? 'LLM_PRICING 环境变量' : '内置默认'}（{llmMetrics.pricing.unit}）。</p>
+                    </>
+                  ) : <p className="empty">加载中...</p>}
                 </div>
                 <div className="detail-block">
                   <h4>Eval Notes</h4>

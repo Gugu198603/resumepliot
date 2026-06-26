@@ -32,6 +32,7 @@ model Resume {
 model Session {
   id        String    @id @default(cuid())
   userId    String?
+  resumeId  String?
   title     String?
   goal      String?
   createdAt DateTime  @default(now())
@@ -68,9 +69,23 @@ model JobDescription {
   id           String   @id @default(cuid())
   title        String?
   company      String?
+  location     String?
+  source       String?  @default("manual")
   sourceUrl    String?
+  dedupeKey    String?  @unique
   originalText String
   parsedJson   String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+  matches      JobMatch[]
+}
+
+model JobMatch {
+  id          String   @id @default(cuid())
+  jobId       String
+  resumeId    String?
+  matchScore  Int      @default(0)
+  resultJson  String?
+  createdAt   DateTime @default(now())
+  job         JobDescription @relation(fields: [jobId], references: [id])
 }

@@ -93,3 +93,28 @@ export async function getDatabaseOverview() {
   const provider = await getProvider();
   return await provider.getDatabaseOverview();
 }
+
+export async function saveJobDescription(record) {
+  const provider = await getProvider();
+  return await provider.saveJobDescription(record);
+}
+
+export async function listJobDescriptions(limit = 50) {
+  const provider = await getProvider();
+  return await provider.listJobDescriptions(limit);
+}
+
+export async function getJobDescription(id) {
+  const provider = await getProvider();
+  return await provider.getJobDescription(id);
+}
+
+export async function saveJobMatch(record) {
+  const provider = await getProvider();
+  return await provider.saveJobMatch(record);
+}
+
+export async function listJobMatches(limit = 50) {
+  const provider = await getProvider();
+  return await provider.listJobMatches(limit);
+}

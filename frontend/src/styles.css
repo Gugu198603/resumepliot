@@ -421,6 +421,13 @@ pre {
 .detail-card span { display: block; color: var(--text-soft); font-size: 12px; margin-bottom: 8px; }
 .detail-card strong { color: var(--title); }
 .detail-block h4 { margin: 0 0 10px; color: var(--title); }
+.detail-block h5 { margin: 16px 0 8px; color: var(--title); font-size: 13px; }
+.llm-metric-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.llm-metric-table th, .llm-metric-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid rgba(145, 127, 116, 0.12); }
+.llm-metric-table th { color: var(--text-soft); font-weight: 600; font-size: 12px; }
+.llm-metric-table td { color: var(--title); }
+.llm-metric-table tbody tr:hover { background: rgba(255, 251, 246, 0.6); }
+.metric-footnote { margin: 12px 0 0; color: var(--text-soft); font-size: 12px; }
 .chip-wrap { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip.danger { background: rgba(183, 143, 136, 0.18); color: #8c5d5a; }
 .section-list.compact { gap: 10px; }
@@ -850,6 +857,21 @@ button:disabled {
 
 .jd-input-row button {
   align-self: flex-start;
+}
+
+.jd-url-input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 10px 12px;
+  background: rgba(255, 252, 248, 0.9);
+  color: var(--text);
+}
+
+.jd-history {
+  margin-top: 18px;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
 }
 
 .jd-result {

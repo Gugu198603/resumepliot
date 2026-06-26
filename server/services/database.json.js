@@ -19,7 +19,9 @@ function normalizeDb(db = {}) {
   return {
     sessions: Array.isArray(db.sessions) ? db.sessions : [],
     resumes: Array.isArray(db.resumes) ? db.resumes : [],
-    runs: Array.isArray(db.runs) ? db.runs : []
+    runs: Array.isArray(db.runs) ? db.runs : [],
+    jobs: Array.isArray(db.jobs) ? db.jobs : [],
+    jobMatches: Array.isArray(db.jobMatches) ? db.jobMatches : []
   };
 }
 
@@ -125,4 +127,72 @@ export async function getDatabaseOverview() {
     runs: db.runs.length,
     sessions: db.sessions.length
   };
+}
+
+export async function saveJobDescription(record) {
+  const db = await readDb();
+  const now = new Date().toISOString();
+  if (record.dedupeKey) {
+    const existing = db.jobs.find((j) => j.dedupeKey === record.dedupeKey);
+    if (existing) {
+      Object.assign(existing, {
+        title: record.title ?? existing.title,
+        company: record.company ?? existing.company,
+        location: record.location ?? existing.location,
+        sourceUrl: record.sourceUrl ?? existing.sourceUrl,
+        text: record.text || record.originalText || existing.text,
+        parsed: record.parsed ?? existing.parsed,
+        updatedAt: now
+      });
+      await writeDb(db);
+      return existing;
+    }
+  }
+  const job = {
+    id: nowId('job'),
+    title: record.title || null,
+    company: record.company || null,
+    location: record.location || null,
+    source: record.source || 'manual',
+    sourceUrl: record.sourceUrl || null,
+    dedupeKey: record.dedupeKey || null,
+    text: record.text || record.originalText || '',
+    parsed: record.parsed || null,
+    createdAt: now,
+    updatedAt: now
+  };
+  db.jobs.push(job);
+  await writeDb(db);
+  return job;
+}
+
+export async function listJobDescriptions(limit = 50) {
+  const db = await readDb();
+  return db.jobs.slice(-limit).reverse();
+}
+
+export async function getJobDescription(id) {
+  const db = await readDb();
+  return db.jobs.find((j) => j.id === id) || null;
+}
+
+export async function saveJobMatch(record) {
+  const db = await readDb();
+  const match = {
+    id: nowId('jobmatch'),
+    jobId: record.jobId,
+    resumeId: record.resumeId || null,
+    matchScore: Number.isFinite(record.matchScore) ? Math.round(record.matchScore) : 0,
+    result: record.result || null,
+    createdAt: new Date().toISOString()
+  };
+  db.jobMatches.push(match);
+  await writeDb(db);
+  return match;
+}
+
+export async function listJobMatches(limit = 50) {
+  const db = await readDb();
+  const jobsById = new Map(db.jobs.map((j) => [j.id, j]));
+  return db.jobMatches.slice(-limit).reverse().map((m) => ({ ...m, job: jobsById.get(m.jobId) || null }));
 }

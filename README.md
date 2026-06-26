@@ -1,25 +1,27 @@
 # ResumePilot
 
-一个为了“边学边拆”而做的 AI 求职产品原型，重点不是花哨页面，而是把这 3 个学习点做成你能继续扩展的最小闭环：
+一个 AI 求职助手原型，围绕三个学习点做成了**可运行的完整闭环**（不再是模拟）：
 
-1. **RAG 思路**：先把简历切 chunk，再做检索，再把检索结果送进问答/追问模块
-2. **向量数据库思路**：当前用本地词频 embedding + 相似度计算模拟，后续你可以替换成真实 embedding + vector DB
-3. **Agent 思路**：当前把“解析 -> 检索 -> 追问 -> 评估 -> 改写”做成多角色链路，后续可以继续拆成 planner / retriever / interviewer / critic
+1. **RAG**：简历切 chunk -> BGE-M3 语义 embedding -> 向量检索 -> 把命中片段送进问答/追问/评估
+2. **向量数据库**：内存向量库与 Qdrant 可通过环境变量切换
+3. **多 Agent**：planner / retriever / interviewer / critic / writer / jdMatcher 协作链路
 
 ## 当前已经做好的功能
 
-- PDF / 文本简历导入
-- 简历结构化拆分
+- PDF / 文本简历导入与结构化拆分
 - 风险术语识别
-- 本地 RAG 检索原型（chunk + embedding + similarity）
-- 面试追问生成
-- 回答评估
-- 精简版 / 详细版简历改写
+- 真实语义检索（BGE-M3 embedding + 内存 / Qdrant 向量库）
+- 多 Agent 面试追问、回答评估、精简版 / 详细版简历改写
+- SQLite + Prisma 持久化，历史运行 / 会话可回看
+- 岗位 JD 对比并落库，匹配历史可回看
+- 招聘岗位抓取：Greenhouse / Lever 公开 ATS 适配器 + 定时调度器（去重入库）
+- LLM 调用 trace（mode / 延迟 / token / model）在 Run 详情面板可见
 
 ## 目录结构
 
 - `frontend/`：React + Vite 页面
-- `server/`：Express API
+- `server/`：Express API、多 agent、服务层
+- `prisma/`：Prisma schema 与 SQLite 数据库
 - `data/latest.json`：最近一次解析结果
 
 ## 启动方式
@@ -33,74 +35,29 @@ npm run dev
 前端默认在：`http://localhost:5173`
 后端默认在：`http://localhost:8787`
 
-## 你接下来 1 小时后最该做的 3 件事
+## 测试
 
-### 1. 把本地假 embedding 替换成真实 embedding
-现在在 `server/index.js` 里：
-- `embed(text)`
-- `similarity(a, b)`
-- `retrieveTopK(...)`
+```bash
+npm test
+```
 
-这是一个简化版“假向量检索”。
+覆盖：简历解析、jdMatcher、llmClient、skill workflow、JSON 数据层（含 Session.resumeId 持久化、JobDescription dedupe、JobMatch）、jobSources 适配器层与调度器去重。
 
-你接下来可以替换成：
-- OpenAI embedding / 其它 embedding API
-- 或本地 embedding 模型
+## 下一步可做的方向
 
-然后把结果存到真实向量库。
+- 支持多份简历并行管理与对比
+- 岗位抓取扩展更多数据源与地域 / 关键词过滤
+- 个性化投递建议与岗位-简历差距报告
+- LLM 成本与延迟聚合看板（trace 已采集，待做聚合视图）
+- 登录、作品集、分享链接；语音面试模式
 
-### 2. 把内存 KB 替换成真实向量数据库
-当前知识库是：
-- chunk 切分
-- 直接数组存内存
-- 本地算相似度
-
-你后面可以换成：
-- pgvector
-- Milvus
-- Qdrant
-- Chroma
-
-替换点主要在：
-- `buildKnowledgeBase`
-- `retrieveTopK`
-
-### 3. 把问答流程升级成真正 Agent
-当前只是“Agent 风格链路”，还不是复杂 agent 编排。
-
-你可以继续拆成：
-- planner：决定先问项目还是实习
-- retriever：专门负责检索最相关 chunk
-- interviewer：生成追问
-- critic：评估回答真实性和完整性
-- writer：输出精简版 / 详细版简历
-
-## 为什么我故意没把它做复杂
-
-因为你说你的目的就是学：
-- RAG
-- 向量数据库
-- agent
-
-所以这个版本特意满足两个条件：
-
-1. **现在就能跑**
-2. **你一眼能看懂接下来该改哪里**
-
-## 推荐你的下一步升级顺序
-
-1. 先接入真实 embedding
-2. 再接入 vector DB
-3. 最后再拆多 agent
-
-不要反过来。
-
-## 可直接写进简历的项目描述（做完升级后）
+## 可直接写进简历的项目描述
 
 **ResumePilot｜AI 简历拆解与面试训练平台**
-- 基于 RAG 思路构建简历分析与面试训练系统，支持简历切分、语义检索、追问生成与回答评估
-- 设计多阶段 Agent 流程，将简历解析、检索召回、面试追问和结果评估拆分为独立角色，提高输出稳定性
-- 支持精简版 / 详细版简历改写与风险术语识别，帮助用户提升简历真实性与面试表达一致性
+- 基于 RAG 构建简历分析与面试训练系统：BGE-M3 语义检索 + 可切换 Qdrant 向量库，支持简历切分、检索召回、追问生成与回答评估
+- 设计多阶段 Agent 流程（planner/retriever/interviewer/critic/writer/jdMatcher），将各环节拆为独立角色，提高输出稳定性与可观测性
+- 实现岗位 JD 抓取与匹配：对接 Greenhouse / Lever 公开 ATS API，定时调度去重入库，支持多岗位对比与匹配历史回看
+- 全栈持久化（SQLite + Prisma，JSON 兜底），支持历史运行与会话回看
 
 
 
@@ -214,3 +171,62 @@ QDRANT_API_KEY=your_key
 - `APP_DB_PROVIDER=auto`（默认）：优先尝试 Prisma，失败则回退 JSON
 
 这意味着你现在可以先以 Web App 方式继续开发，Prisma 没装好时也不会阻塞整个系统运行。
+
+
+## 招聘岗位抓取（Job Sources）
+
+通过可插拔适配器从公开招聘源拉取 JD，统一归一化后落库去重（按 `dedupeKey`）。
+
+### 内置 source
+
+- `manual`：粘贴文本
+- `url`：抓取单个网页正文（带超时 / 2MB 限制 / 失败降级）
+- `greenhouse`：Greenhouse 公开 ATS API（`boards-api.greenhouse.io`），按公司 board token 拉取，带完整 HTML JD
+- `lever`：Lever 公开 ATS API（`api.lever.co`），按公司 handle 拉取
+
+### 相关接口
+
+- `GET /api/job-sources`：列出已注册 source
+- `GET /api/jobs`：已落库 JD 列表
+- `GET /api/job-matches`：JD 匹配历史
+- `POST /api/jobs/fetch`：`{ source, config }` 即时抓取并落库
+- `GET /api/job-scheduler`：调度器状态
+- `POST /api/job-scheduler/run`：手动触发一次抓取（可传 `{ jobs }` 覆盖配置）
+
+### 定时调度
+
+在 `.env` 配置（见 `.env.example`）：
+
+```bash
+JOB_SCHEDULER_ENABLED="true"
+JOB_SCHEDULER_INTERVAL_MS="21600000"   # 6h
+JOB_SCHEDULER_CONFIG='[{"source":"greenhouse","config":{"boards":["gitlab"],"limit":50}},{"source":"lever","config":{"companies":["leverdemo"],"limit":50}}]'
+# 或用环境变量提供默认公司列表：
+# GREENHOUSE_BOARDS="gitlab,airbnb"
+# LEVER_COMPANIES="leverdemo,netflix"
+```
+
+调度器在服务启动时按 `JOB_SCHEDULER_CONFIG` 周期性抓取并 upsert 去重入库；新岗位会自动出现在 `/api/jobs`。
+
+### 关键词与地域过滤
+
+`greenhouse` / `lever` 的 `config` 支持 `filter`（也可平铺在 config 顶层），抓取后、入库前过滤：
+
+```json
+{"source":"greenhouse","config":{"boards":["gitlab"],"limit":50,"filter":{
+  "keywords":["engineer","backend"],
+  "keywordMode":"any",
+  "excludeKeywords":["manager","director"],
+  "location":["remote","germany"]
+}}}
+```
+
+- `keywords`：数组或逗号串，匹配 title + 正文；`keywordMode` 为 `any`（默认）或 `all`
+- `excludeKeywords`：命中即排除
+- `location`：数组或逗号串，匹配 location + title + 正文（ATS 返回的地域字段已归一化到 `job.location`）
+
+同样可用于即时抓取：`POST /api/jobs/fetch` body 传 `{ source, config: { ..., filter } }`。
+
+### 扩展新 source
+
+实现 `export const id` 与 `export async function fetchJobs(config)`（返回经 `normalizeJob` 归一化的数组），在 `server/services/jobSources/index.js` 注册即可被抓取接口与调度器复用。

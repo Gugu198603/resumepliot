@@ -28,10 +28,18 @@ import {
   listSessions,
   getSession,
   appendSessionTurn,
-  getDashboardSnapshot
+  getDashboardSnapshot,
+  saveJobDescription,
+  listJobDescriptions,
+  getJobDescription,
+  saveJobMatch,
+  listJobMatches
 } from './services/database.js';
 import { getAppRoadmap } from './services/appPlanner.js';
 import { getLLMConfig } from './services/llmClient.js';
+import { computeLlmMetrics } from './services/llmMetrics.js';
+import { listSources, fetchFromSource } from './services/jobSources/index.js';
+import { startScheduler, getSchedulerStatus, runOnce } from './services/jobScheduler.js';
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -162,6 +170,10 @@ app.post('/api/mcp', async (req, res) => res.json(await handleMcpRequest(req.bod
 app.get('/api/app-roadmap', (_, res) => res.json(getAppRoadmap()));
 app.get('/api/runs', async (_, res) => res.json({ runs: await listRecentRuns() }));
 app.get('/api/dashboard', async (_, res) => { res.json(computeDashboard(await getDashboardSnapshot())); });
+app.get('/api/llm-metrics', async (req, res) => {
+  const limit = Math.min(Number(req.query.limit) || 200, 1000);
+  res.json(computeLlmMetrics(await listRecentRuns(limit)));
+});
 app.get('/api/qdrant-readiness', async (_, res) => { res.json(await getQdrantReadiness()); });
 app.get('/api/llm-readiness', (_, res) => {
   const config = getLLMConfig();
@@ -310,16 +322,57 @@ app.post('/api/rewrite', async (req, res) => {
 
 app.post('/api/jd-match', async (req, res) => {
   try {
-    const { resumeId = null, jdText = '', text = '' } = req.body || {};
-    if (!jdText.trim()) return res.status(400).json({ error: 'jdText is required' });
+    const { resumeId = null, jdText = '', text = '', jobId = null, title = null, company = null, sourceUrl = null } = req.body || {};
+    let jdContent = jdText;
+    let job = null;
+    if (jobId) {
+      job = await getJobDescription(jobId);
+      if (!job) return res.status(404).json({ error: 'Job not found' });
+      jdContent = job.text || '';
+    }
+    if (!jdContent.trim()) return res.status(400).json({ error: 'jdText or jobId is required' });
     const persistedResume = resumeId ? await getResume(resumeId) : null;
     const resumeText = persistedResume?.text || text || '';
     const resumeChunks = persistedResume?.chunks || [];
     if (!resumeText.trim() && !resumeChunks.length) {
       return res.status(400).json({ error: 'No resume content. Provide resumeId or text.' });
     }
-    const result = await matchJobDescription({ resumeText, resumeChunks, jdText });
-    res.json({ resumeId: persistedResume?.id || resumeId || null, ...result });
+    if (!job) {
+      job = await saveJobDescription({ title, company, sourceUrl, source: 'manual', text: jdContent });
+    }
+    const result = await matchJobDescription({ resumeText, resumeChunks, jdText: jdContent });
+    const match = await saveJobMatch({ jobId: job.id, resumeId: persistedResume?.id || resumeId || null, matchScore: result.matchScore, result });
+    res.json({ resumeId: persistedResume?.id || resumeId || null, jobId: job.id, matchId: match.id, ...result });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/jobs', async (_, res) => { res.json({ jobs: await listJobDescriptions() }); });
+app.get('/api/job-matches', async (_, res) => { res.json({ matches: await listJobMatches() }); });
+app.get('/api/job-sources', (_, res) => res.json({ sources: listSources() }));
+app.get('/api/job-scheduler', (_, res) => res.json(getSchedulerStatus()));
+app.post('/api/job-scheduler/run', async (req, res) => {
+  try {
+    const jobs = Array.isArray(req.body?.jobs) ? req.body.jobs : undefined;
+    const summary = await runOnce(jobs);
+    res.json(summary);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/jobs/fetch', async (req, res) => {
+  try {
+    const { source = 'url', config = {} } = req.body || {};
+    const fetched = await fetchFromSource(source, config);
+    const saved = [];
+    const errors = [];
+    for (const job of fetched) {
+      if (job.error) { errors.push({ sourceUrl: job.sourceUrl, error: job.error }); continue; }
+      saved.push(await saveJobDescription(job));
+    }
+    res.json({ source, savedCount: saved.length, jobs: saved, errors });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -327,4 +380,8 @@ app.post('/api/jd-match', async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`ResumePilot Web App server running at http://localhost:${PORT}`);
+  const scheduler = startScheduler();
+  if (scheduler.enabled) {
+    console.log(`Job scheduler enabled: sources=[${scheduler.sources.join(', ')}], interval=${scheduler.intervalMs}ms`);
+  }
 });
