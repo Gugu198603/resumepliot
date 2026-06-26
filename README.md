@@ -41,14 +41,14 @@ npm run dev
 npm test
 ```
 
-覆盖：简历解析、jdMatcher、llmClient、skill workflow、JSON 数据层（含 Session.resumeId 持久化、JobDescription dedupe、JobMatch）、jobSources 适配器层与调度器去重。
+覆盖：简历解析、jdMatcher、llmClient、skill workflow、JSON 数据层（含 Session.resumeId 持久化、JobDescription dedupe、JobMatch）、jobSources 适配器层（含关键词/地域过滤）与调度器去重、LLM 成本与延迟聚合。
 
 ## 下一步可做的方向
 
 - 支持多份简历并行管理与对比
-- 岗位抓取扩展更多数据源与地域 / 关键词过滤
 - 个性化投递建议与岗位-简历差距报告
-- LLM 成本与延迟聚合看板（trace 已采集，待做聚合视图）
+- 模拟面试连续追问体验打磨
+- 岗位抓取扩展更多数据源（LinkedIn / 自建爬虫）
 - 登录、作品集、分享链接；语音面试模式
 
 ## 可直接写进简历的项目描述
