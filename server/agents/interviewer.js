@@ -32,5 +32,5 @@ export async function generateInterviewQuestions({ goal, retrieved, previousAnsw
     schemaHint: '{basic:string[],detail:string[],pressure:string[]}',
     fallbackObject
   });
-  return { questions: { ...fallbackObject, ...result.object }, mode: result.mode };
+  return { questions: { ...fallbackObject, ...result.object }, mode: result.mode, llm: result.meta };
 }

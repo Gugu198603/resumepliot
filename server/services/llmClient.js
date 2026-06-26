@@ -24,12 +24,16 @@ export function getLLMConfig() {
 }
 
 export async function callLLMJson({ system, user, schemaHint, fallbackObject }) {
+  const model = process.env.OPENAI_MODEL || DEFAULT_MODEL;
+
   if (!process.env.OPENAI_API_KEY) {
-    return { object: fallbackObject, mode: 'fallback' };
+    const meta = { mode: 'fallback', model, latencyMs: 0, usage: null, error: null };
+    return { object: fallbackObject, mode: 'fallback', meta };
   }
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), Number(process.env.OPENAI_TIMEOUT_MS || DEFAULT_TIMEOUT_MS));
+  const startedAt = Date.now();
 
   try {
     const response = await fetch(`${resolveBaseUrl()}/chat/completions`, {
@@ -39,7 +43,7 @@ export async function callLLMJson({ system, user, schemaHint, fallbackObject }) 
         Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
       },
       body: JSON.stringify({
-        model: process.env.OPENAI_MODEL || DEFAULT_MODEL,
+        model,
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: system },
@@ -51,15 +55,26 @@ export async function callLLMJson({ system, user, schemaHint, fallbackObject }) 
 
     if (!response.ok) {
       const detail = await response.text();
-      return { object: fallbackObject, mode: 'fallback', error: `LLM responded ${response.status}: ${detail.slice(0, 200)}` };
+      const error = `LLM responded ${response.status}: ${detail.slice(0, 200)}`;
+      const meta = { mode: 'fallback', model, latencyMs: Date.now() - startedAt, usage: null, error };
+      return { object: fallbackObject, mode: 'fallback', error, meta };
     }
 
     const data = await response.json();
     const outputText = data.choices?.[0]?.message?.content || '{}';
     const parsed = JSON.parse(extractJsonObject(outputText));
-    return { object: parsed, mode: 'live', raw: data };
+    const usage = data.usage
+      ? {
+          promptTokens: data.usage.prompt_tokens ?? null,
+          completionTokens: data.usage.completion_tokens ?? null,
+          totalTokens: data.usage.total_tokens ?? null
+        }
+      : null;
+    const meta = { mode: 'live', model: data.model || model, latencyMs: Date.now() - startedAt, usage, error: null };
+    return { object: parsed, mode: 'live', raw: data, meta };
   } catch (error) {
-    return { object: fallbackObject, mode: 'fallback', error: error.message };
+    const meta = { mode: 'fallback', model, latencyMs: Date.now() - startedAt, usage: null, error: error.message };
+    return { object: fallbackObject, mode: 'fallback', error: error.message, meta };
   } finally {
     clearTimeout(timeout);
   }

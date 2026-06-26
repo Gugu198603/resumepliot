@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import ConversationTimeline from './ConversationTimeline';
+import type { Session } from '../types/domain';
 
-export default function SessionDetailPanel({ session, resumeText, onContinueSession }: { session: any | null; resumeText: string; onContinueSession?: (payload: any) => Promise<void> | void }) {
+export default function SessionDetailPanel({ session, resumeText, onContinueSession }: { session: Session | null; resumeText: string; onContinueSession?: (payload: { text: string; answer: string }) => Promise<void> | void }) {
   const [answer, setAnswer] = useState('');
   if (!session) return <p className="empty">点击左侧某个 session 查看详情结构。</p>;
 

@@ -24,5 +24,5 @@ export async function planNextStep({ goal, history = [], sections = [] }) {
     schemaHint: '{currentStage:string,nextAgent:string,reason:string,sectionHints:string[]}',
     fallbackObject
   });
-  return { ...fallbackObject, ...result.object, mode: result.mode };
+  return { ...fallbackObject, ...result.object, mode: result.mode, llm: result.meta };
 }

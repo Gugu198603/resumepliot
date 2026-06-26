@@ -187,15 +187,15 @@ QDRANT_API_KEY=your_key
 - Session
 - Run
 - Message
-- RewriteHistory
 - JobDescription
 
 ### 本地接入步骤
 1. 安装 Prisma 依赖：`npm install -D prisma && npm install @prisma/client`
-2. 确认 `.env` 含 `DATABASE_URL="file:./prisma/dev.db"`
-3. 生成 Prisma Client：`npx prisma generate`
-4. 创建/同步表结构：`npx prisma db push`
-5. 设置 `APP_DB_PROVIDER=prisma`（或保持 `auto`，安装好后会自动启用）
+2. 确认 `.env` 含 `DATABASE_URL="file:./dev.db"`（SQLite 路径相对 `prisma/` 目录，最终落在 `prisma/dev.db`）
+3. 生成 Prisma Client：`npm run prisma:generate`
+4. 创建/同步表结构：`npm run prisma:push`
+5. 迁移旧 JSON 数据（可选）：`npm run db:migrate-json`
+6. 设置 `APP_DB_PROVIDER=prisma`（或保持 `auto`，安装好后会自动启用）
 
 ### 说明
 `auto` 模式下若 Prisma 未安装，会静默回退到 JSON 文件，不阻塞系统运行。

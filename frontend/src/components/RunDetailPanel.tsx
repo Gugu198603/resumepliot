@@ -1,4 +1,6 @@
-export default function RunDetailPanel({ run }: { run: any | null }) {
+import type { ExecutionStep, Run } from '../types/domain';
+
+export default function RunDetailPanel({ run }: { run: Run | null }) {
   if (!run) return <p className="empty">点击左侧某条运行记录查看详情。</p>;
 
   return (
@@ -17,7 +19,7 @@ export default function RunDetailPanel({ run }: { run: any | null }) {
         <h4>Execution Plan</h4>
         {run.executionPlan?.length ? (
           <ol className="timeline-list">
-            {run.executionPlan.map((step: any, idx: number) => (
+            {run.executionPlan.map((step: ExecutionStep, idx: number) => (
               <li key={idx}><strong>{step.agent}</strong> - {step.text}</li>
             ))}
           </ol>

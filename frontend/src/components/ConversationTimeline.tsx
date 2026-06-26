@@ -1,4 +1,6 @@
-export default function ConversationTimeline({ turns }: { turns: any[] }) {
+import type { RetrievedChunk, Turn } from '../types/domain';
+
+export default function ConversationTimeline({ turns }: { turns: Turn[] }) {
   if (!turns?.length) return <p className="empty">暂无对话轮次。</p>;
 
   return (
@@ -15,7 +17,7 @@ export default function ConversationTimeline({ turns }: { turns: any[] }) {
               <div className="message retriever">
                 <strong>Retrieved Context</strong>
                 <ul>
-                  {turn.retrieved.map((item: any, i: number) => (
+                  {turn.retrieved.map((item: RetrievedChunk, i: number) => (
                     <li key={i}>[{item.source || 'resume'}] score={item.score} {String(item.content || '').slice(0, 120)}...</li>
                   ))}
                 </ul>

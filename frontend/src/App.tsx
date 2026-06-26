@@ -2,9 +2,20 @@ import { useEffect, useMemo, useState } from 'react';
 import ResumeDetailPanel from './components/ResumeDetailPanel';
 import RunDetailPanel from './components/RunDetailPanel';
 import SessionDetailPanel from './components/SessionDetailPanel';
+import type {
+  AgentOutput,
+  Dashboard,
+  ExecutionStep,
+  JdMatchResult,
+  LlmReadiness,
+  ParseResult,
+  QdrantReadiness,
+  RetrievedChunk,
+  Resume,
+  Run,
+  Session
+} from './types/domain';
 
-type Section = { title: string; content: string[] };
-type ParseResult = { resumeId?: string; text: string; sections: Section[]; risks: { term: string; reason: string }[]; kbSize: number; vectorProvider?: string };
 type Tab = 'workspace' | 'resumes' | 'runs' | 'sessions' | 'dashboard';
 type DisplayTab = 'overview' | 'resume' | 'retrieval' | 'agents' | 'history' | 'jd';
 
@@ -12,28 +23,28 @@ export default function App() {
   const [resumeText, setResumeText] = useState('');
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
   const [goal, setGoal] = useState('请围绕项目经历生成可深挖的面试问题');
-  const [executionPlan, setExecutionPlan] = useState<any[]>([]);
-  const [agentOutputs, setAgentOutputs] = useState<any[]>([]);
+  const [executionPlan, setExecutionPlan] = useState<ExecutionStep[]>([]);
+  const [agentOutputs, setAgentOutputs] = useState<AgentOutput[]>([]);
   const [loading, setLoading] = useState<string | null>(null);
   const [vectorProvider, setVectorProvider] = useState<string>('memory');
-  const [resumes, setResumes] = useState<any[]>([]);
-  const [runs, setRuns] = useState<any[]>([]);
-  const [sessions, setSessions] = useState<any[]>([]);
-  const [selectedResume, setSelectedResume] = useState<any | null>(null);
-  const [selectedRun, setSelectedRun] = useState<any | null>(null);
-  const [selectedSession, setSelectedSession] = useState<any | null>(null);
-  const [dashboard, setDashboard] = useState<any | null>(null);
-  const [qdrantReadiness, setQdrantReadiness] = useState<any | null>(null);
-  const [llmReadiness, setLlmReadiness] = useState<any | null>(null);
+  const [resumes, setResumes] = useState<Resume[]>([]);
+  const [runs, setRuns] = useState<Run[]>([]);
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [selectedResume, setSelectedResume] = useState<Resume | null>(null);
+  const [selectedRun, setSelectedRun] = useState<Run | null>(null);
+  const [selectedSession, setSelectedSession] = useState<Session | null>(null);
+  const [dashboard, setDashboard] = useState<Dashboard | null>(null);
+  const [qdrantReadiness, setQdrantReadiness] = useState<QdrantReadiness | null>(null);
+  const [llmReadiness, setLlmReadiness] = useState<LlmReadiness | null>(null);
   const [tab, setTab] = useState<Tab>('workspace');
   const [displayTab, setDisplayTab] = useState<DisplayTab>('overview');
   const [activeQuestion, setActiveQuestion] = useState('');
   const [answerDraft, setAnswerDraft] = useState('');
-  const [retrievalPreview, setRetrievalPreview] = useState<any[]>([]);
+  const [retrievalPreview, setRetrievalPreview] = useState<RetrievedChunk[]>([]);
   const [activeCritique, setActiveCritique] = useState<string[]>([]);
   const [activeImproved, setActiveImproved] = useState('');
   const [jdText, setJdText] = useState('');
-  const [jdResult, setJdResult] = useState<any | null>(null);
+  const [jdResult, setJdResult] = useState<JdMatchResult | null>(null);
 
   const stats = useMemo(() => {
     if (!parseResult) return null;
@@ -46,7 +57,7 @@ export default function App() {
   }, [parseResult, vectorProvider]);
 
   const agentCards = useMemo(() => {
-    const map = new Map<string, any>();
+    const map = new Map<string, unknown>();
     for (const item of agentOutputs) {
       map.set(item.step?.agent || 'unknown', item.output);
     }
@@ -449,11 +460,11 @@ export default function App() {
                 </div>
                 <div className="detail-block">
                   <h4>Session Trend</h4>
-                  <div className="risk-list">{(dashboard.trend || []).map((item: any) => <div className="risk-item" key={item.title + item.createdAt}><strong>{item.title}</strong><p>{item.createdAt}</p><p>turns: {item.turns}</p></div>)}</div>
+                  <div className="risk-list">{(dashboard.trend || []).map((item) => <div className="risk-item" key={item.title + item.createdAt}><strong>{item.title}</strong><p>{item.createdAt}</p><p>turns: {item.turns}</p></div>)}</div>
                 </div>
                 <div className="detail-block">
                   <h4>Retrieval Samples</h4>
-                  <div className="risk-list">{(dashboard.retrievalSamples || []).map((sample: any, idx: number) => <div className="risk-item" key={idx}><strong>{sample.session}</strong><p>{sample.question}</p><ul>{(sample.retrieved || []).map((r: any, i: number) => <li key={i}>[{r.source || 'resume'}] score={r.score} {String(r.content || '').slice(0, 100)}...</li>)}</ul></div>)}</div>
+                  <div className="risk-list">{(dashboard.retrievalSamples || []).map((sample, idx) => <div className="risk-item" key={idx}><strong>{sample.session}</strong><p>{sample.question}</p><ul>{(sample.retrieved || []).map((r, i) => <li key={i}>[{r.source || 'resume'}] score={r.score} {String(r.content || '').slice(0, 100)}...</li>)}</ul></div>)}</div>
                 </div>
               </div>
             ) : <p className="empty">加载中...</p>}

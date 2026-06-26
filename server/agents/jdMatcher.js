@@ -25,7 +25,8 @@ export async function matchJobDescription({ resumeText = '', resumeChunks = [], 
       matched: [],
       gaps: jdChunks,
       suggestions: ['请提供有效的简历内容与岗位描述后再进行对比。'],
-      mode: 'fallback'
+      mode: 'fallback',
+      llm: { mode: 'fallback', model: null, latencyMs: 0, usage: null, error: 'empty resume or jd input' }
     };
   }
 
@@ -67,6 +68,7 @@ export async function matchJobDescription({ resumeText = '', resumeChunks = [], 
     matched: result.object.matched || fallbackObject.matched,
     gaps: result.object.gaps || fallbackObject.gaps,
     suggestions: result.object.suggestions || fallbackObject.suggestions,
-    mode: result.mode
+    mode: result.mode,
+    llm: result.meta
   };
 }

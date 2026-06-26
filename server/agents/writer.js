@@ -18,5 +18,5 @@ export async function rewriteArtifacts({ text, answer = '', feedback = [] }) {
     fallbackObject
   });
 
-  return { ...fallbackObject, ...result.object, mode: result.mode };
+  return { ...fallbackObject, ...result.object, mode: result.mode, llm: result.meta };
 }

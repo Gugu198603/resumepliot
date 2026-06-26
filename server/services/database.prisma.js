@@ -9,26 +9,40 @@ async function getPrisma() {
   return prisma;
 }
 
+function toJsonString(value) {
+  if (value === undefined || value === null) return null;
+  return JSON.stringify(value);
+}
+
+function fromJsonString(value, fallback = null) {
+  if (typeof value !== 'string') return value ?? fallback;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
 export async function saveResumeRecord(record) {
   const client = await getPrisma();
   return await client.resume.create({
     data: {
       title: record.title || 'Imported Resume',
       originalText: record.text || '',
-      parsedJson: {
+      parsedJson: toJsonString({
         sections: record.sections || [],
         risks: record.risks || [],
         kbSize: record.kbSize || 0,
         chunks: record.chunks || [],
         vectorProvider: record.vectorProvider || null
-      }
+      })
     }
   });
 }
 
 function mapResume(record) {
   if (!record) return null;
-  const parsed = record.parsedJson || {};
+  const parsed = fromJsonString(record.parsedJson, {}) || {};
   return {
     id: record.id,
     title: record.title,
@@ -61,8 +75,8 @@ export async function saveRunRecord(record) {
       goal: record.goal || '',
       skillId: record.skill?.id || record.skillId || null,
       vectorProvider: record.vectorProvider || null,
-      executionPlan: record.executionPlan || [],
-      resultJson: record
+      executionPlan: toJsonString(record.executionPlan || []),
+      resultJson: toJsonString(record)
     }
   });
 }
@@ -74,8 +88,8 @@ function mapRun(record) {
     goal: record.goal,
     skillId: record.skillId,
     vectorProvider: record.vectorProvider,
-    executionPlan: record.executionPlan || [],
-    ...(record.resultJson || {}),
+    executionPlan: fromJsonString(record.executionPlan, []) || [],
+    ...(fromJsonString(record.resultJson, {}) || {}),
     createdAt: record.createdAt
   };
 }

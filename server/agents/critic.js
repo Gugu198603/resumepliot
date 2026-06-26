@@ -38,6 +38,7 @@ export async function critiqueAnswer({ answer, retrieved = [], question = '' }) 
       semanticMatch: Number(bestScore.toFixed(3))
     },
     feedback: result.object.feedback || fallbackObject.feedback,
-    mode: result.mode
+    mode: result.mode,
+    llm: result.meta
   };
 }

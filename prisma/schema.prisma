@@ -22,12 +22,11 @@ model Resume {
   userId       String?
   title        String?
   originalText String
-  parsedJson   Json?
+  parsedJson   String?
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
   user         User?            @relation(fields: [userId], references: [id])
   runs         Run[]
-  rewrites     RewriteHistory[]
 }
 
 model Session {
@@ -49,8 +48,8 @@ model Run {
   goal           String?
   skillId        String?
   vectorProvider String?
-  executionPlan  Json?
-  resultJson     Json?
+  executionPlan  String?
+  resultJson     String?
   createdAt      DateTime  @default(now())
   session        Session?  @relation(fields: [sessionId], references: [id])
   resume         Resume?   @relation(fields: [resumeId], references: [id])
@@ -65,22 +64,13 @@ model Message {
   session   Session  @relation(fields: [sessionId], references: [id])
 }
 
-model RewriteHistory {
-  id          String   @id @default(cuid())
-  resumeId    String
-  rewriteType String
-  content     String
-  createdAt   DateTime @default(now())
-  resume      Resume   @relation(fields: [resumeId], references: [id])
-}
-
 model JobDescription {
   id           String   @id @default(cuid())
   title        String?
   company      String?
   sourceUrl    String?
   originalText String
-  parsedJson   Json?
+  parsedJson   String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }

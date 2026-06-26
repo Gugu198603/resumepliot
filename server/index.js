@@ -41,6 +41,26 @@ function makeId(prefix) {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function summarizeLlmTrace(trace = []) {
+  const calls = trace.length;
+  const liveCalls = trace.filter((t) => t.mode === 'live').length;
+  const totalLatencyMs = trace.reduce((sum, t) => sum + (t.latencyMs || 0), 0);
+  const totalTokens = trace.reduce((sum, t) => sum + (t.usage?.totalTokens || 0), 0);
+  const models = [...new Set(trace.map((t) => t.model).filter(Boolean))];
+  const errors = trace.filter((t) => t.error).map((t) => ({ agent: t.agent, error: t.error }));
+  return {
+    calls,
+    liveCalls,
+    fallbackCalls: calls - liveCalls,
+    mode: calls === 0 ? 'none' : liveCalls === calls ? 'live' : liveCalls === 0 ? 'fallback' : 'mixed',
+    totalLatencyMs,
+    avgLatencyMs: calls ? Math.round(totalLatencyMs / calls) : 0,
+    totalTokens,
+    models,
+    errors
+  };
+}
+
 function stripChunkForResponse(chunk) {
   const { embedding, ...safeChunk } = chunk;
   return safeChunk;
@@ -220,6 +240,7 @@ app.post('/api/agent-run', async (req, res) => {
     const skill = await routeSkill({ goal: goal || '' });
     const executionPlan = resolveExecutionPlan({ content: skill.rawContent || '' });
     const agentOutputs = [];
+    const llmTrace = [];
     let parseOutput = null;
     let plan = null;
     let retrieved = [];
@@ -238,6 +259,7 @@ app.post('/api/agent-run', async (req, res) => {
         agentOutputs.push({ step, output: parseOutput });
       } else if (step.agent === 'planner') {
         plan = await planNextStep({ goal, history, sections });
+        if (plan.llm) llmTrace.push({ agent: 'planner', ...plan.llm });
         agentOutputs.push({ step, output: plan });
       } else if (step.agent === 'retriever') {
         const result = await retrieveContext({ text: sourceText, query: goal, topK: 3, sessionTurns, resumeId: persistedResume?.id || resumeId });
@@ -247,16 +269,20 @@ app.post('/api/agent-run', async (req, res) => {
       } else if (step.agent === 'interviewer') {
         const result = await generateInterviewQuestions({ goal, retrieved, previousAnswer: answer });
         questions = result.questions;
+        if (result.llm) llmTrace.push({ agent: 'interviewer', ...result.llm });
         agentOutputs.push({ step, output: result });
       } else if (step.agent === 'critic' && answer) {
         critique = await critiqueAnswer({ answer, retrieved, question: questions?.detail?.[0] || questions?.basic?.[0] || '' });
+        if (critique.llm) llmTrace.push({ agent: 'critic', ...critique.llm });
         agentOutputs.push({ step, output: critique });
       } else if (step.agent === 'writer' && answer) {
         rewrite = await rewriteArtifacts({ text: sourceText, answer, feedback: critique?.feedback || [] });
+        if (rewrite.llm) llmTrace.push({ agent: 'writer', ...rewrite.llm });
         agentOutputs.push({ step, output: rewrite });
       }
     }
-    const record = await saveRunRecord({ goal, hasAnswer: Boolean(answer), resumeId: persistedResume?.id || resumeId || null, skill: skill.selectedSkill, executionPlan, vectorProvider, agentOutputs, retrievalMeta });
+    const llmSummary = summarizeLlmTrace(llmTrace);
+    const record = await saveRunRecord({ goal, hasAnswer: Boolean(answer), resumeId: persistedResume?.id || resumeId || null, skill: skill.selectedSkill, executionPlan, vectorProvider, agentOutputs, retrievalMeta, llmTrace, llmSummary });
     let session = null;
     if (sessionId || goal) {
       session = sessionId ? await getSession(sessionId) : await findOrCreateSessionByGoal(goal, { resumeId: persistedResume?.id || resumeId || null });
@@ -265,7 +291,7 @@ app.post('/api/agent-run', async (req, res) => {
         session = await appendSessionTurn(session.id, turn, record.id);
       }
     }
-    res.json({ runId: record.id, sessionId: session?.id || null, resumeId: persistedResume?.id || resumeId || null, skill, executionPlan, agentOutputs, plan, parseOutput, retrieved, questions, critique, rewrite, retrievalMeta, vectorProvider });
+    res.json({ runId: record.id, sessionId: session?.id || null, resumeId: persistedResume?.id || resumeId || null, skill, executionPlan, agentOutputs, plan, parseOutput, retrieved, questions, critique, rewrite, retrievalMeta, vectorProvider, llmTrace, llmSummary });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

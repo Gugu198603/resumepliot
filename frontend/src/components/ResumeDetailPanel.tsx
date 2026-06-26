@@ -1,4 +1,6 @@
-export default function ResumeDetailPanel({ resume }: { resume: any | null }) {
+import type { Resume, Risk, Section } from '../types/domain';
+
+export default function ResumeDetailPanel({ resume }: { resume: Resume | null }) {
   if (!resume) return <p className="empty">点击左侧某条简历查看详情。</p>;
 
   const riskCount = Array.isArray(resume.risks) ? resume.risks.length : 0;
@@ -24,14 +26,14 @@ export default function ResumeDetailPanel({ resume }: { resume: any | null }) {
         <h4>Risk Terms</h4>
         {riskCount ? (
           <div className="chip-wrap">
-            {resume.risks.map((risk: any) => <span key={risk.term} className="chip danger">{risk.term}</span>)}
+            {(resume.risks || []).map((risk: Risk) => <span key={risk.term} className="chip danger">{risk.term}</span>)}
           </div>
         ) : <p className="empty">暂无风险术语。</p>}
       </div>
       <div className="detail-block">
         <h4>Sections</h4>
         <div className="section-list compact">
-          {(resume.sections || []).map((section: any) => (
+          {(resume.sections || []).map((section: Section) => (
             <div className="section-item" key={section.title}>
               <h5>{section.title}</h5>
               <ul>{(section.content || []).slice(0, 6).map((item: string, idx: number) => <li key={idx}>{item}</li>)}</ul>

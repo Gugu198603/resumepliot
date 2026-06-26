@@ -9,3 +9,6 @@ build/
 .vscode/
 data/app-db.json
 data/latest.json
+prisma/dev.db
+prisma/dev.db-journal
+frontend/vite.config.e2e.ts
