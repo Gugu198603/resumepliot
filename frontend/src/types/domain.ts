@@ -134,6 +134,12 @@ export interface JdCoverageItem {
   covered: boolean;
 }
 
+export interface JdGapReport {
+  summary: string;
+  matchedKeywords: string[];
+  missingKeywords: string[];
+}
+
 export interface JdMatchResult {
   resumeId?: string | null;
   jobId?: string | null;
@@ -143,6 +149,7 @@ export interface JdMatchResult {
   matched: string[];
   gaps: string[];
   suggestions: string[];
+  gapReport?: JdGapReport | null;
   mode: LlmMode;
   llm?: LlmMeta;
 }

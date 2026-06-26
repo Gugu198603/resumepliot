@@ -7,6 +7,7 @@ import type {
   Dashboard,
   ExecutionStep,
   JdMatchResult,
+  JobDescription,
   JobMatch,
   LlmMetrics,
   LlmReadiness,
@@ -49,6 +50,8 @@ export default function App() {
   const [jdText, setJdText] = useState('');
   const [jdResult, setJdResult] = useState<JdMatchResult | null>(null);
   const [jobMatches, setJobMatches] = useState<JobMatch[]>([]);
+  const [jobs, setJobs] = useState<JobDescription[]>([]);
+  const [selectedJobId, setSelectedJobId] = useState<string>('');
   const [jdUrl, setJdUrl] = useState('');
 
   const stats = useMemo(() => {
@@ -135,12 +138,16 @@ export default function App() {
   }
 
   async function matchJd() {
-    if (!jdText.trim() || !resumeText.trim()) return;
+    if ((!jdText.trim() && !selectedJobId) || !resumeText.trim()) return;
     setLoading('正在对比岗位描述...');
     const res = await fetch('/api/jd-match', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: resumeText, resumeId: parseResult?.resumeId || selectedSession?.resumeId || null, jdText })
+      body: JSON.stringify({
+        text: resumeText,
+        resumeId: parseResult?.resumeId || selectedSession?.resumeId || null,
+        ...(selectedJobId ? { jobId: selectedJobId } : { jdText })
+      })
     });
     const data = await res.json();
     setJdResult(data.error ? null : data);
@@ -148,7 +155,14 @@ export default function App() {
     loadJobMatches();
   }
 
+  function pickJob(jobId: string) {
+    setSelectedJobId(jobId);
+    const job = jobs.find((j) => j.id === jobId);
+    if (job?.text) setJdText(job.text);
+  }
+
   async function loadJobMatches() { const res = await fetch('/api/job-matches'); const data = await res.json(); setJobMatches(data.matches || []); }
+  async function loadJobs() { const res = await fetch('/api/jobs'); const data = await res.json(); setJobs(data.jobs || []); }
 
   async function fetchJdFromUrl() {
     if (!jdUrl.trim()) return;
@@ -188,7 +202,7 @@ export default function App() {
     setTab('workspace');
   }
 
-  useEffect(() => { loadResumes(); loadRuns(); loadSessions(); loadDashboard(); loadQdrantReadiness(); loadLlmReadiness(); loadLlmMetrics(); loadJobMatches(); }, []);
+  useEffect(() => { loadResumes(); loadRuns(); loadSessions(); loadDashboard(); loadQdrantReadiness(); loadLlmReadiness(); loadLlmMetrics(); loadJobMatches(); loadJobs(); }, []);
 
   return (
     <div className="page">
@@ -360,13 +374,25 @@ export default function App() {
 
               {displayTab === 'jd' && (
                 <div className="display-section">
+                  {jobs.length > 0 && (
+                    <div className="jd-input-row">
+                      <select className="jd-job-select" value={selectedJobId} onChange={(e) => pickJob(e.target.value)}>
+                        <option value="">— 从已抓取岗位库选择 —</option>
+                        {jobs.map((job) => (
+                          <option key={job.id} value={job.id}>
+                            {[job.title, job.company].filter(Boolean).join(' · ') || job.id}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                   <div className="jd-input-row">
                     <input className="jd-url-input" value={jdUrl} onChange={(e) => setJdUrl(e.target.value)} placeholder="粘贴岗位链接，自动抓取 JD 正文（动态渲染站点可能抓不到）。" />
                     <button onClick={fetchJdFromUrl} disabled={!jdUrl.trim()}>抓取链接</button>
                   </div>
                   <div className="jd-input-row">
-                    <textarea className="jd-input" value={jdText} onChange={(e) => setJdText(e.target.value)} placeholder="粘贴目标岗位的 JD（每行一条要求效果最佳），点击对比。" />
-                    <button onClick={matchJd} disabled={!jdText.trim() || !resumeText.trim()}>对比岗位匹配度</button>
+                    <textarea className="jd-input" value={jdText} onChange={(e) => { setJdText(e.target.value); setSelectedJobId(''); }} placeholder="粘贴目标岗位的 JD（每行一条要求效果最佳），点击对比。" />
+                    <button onClick={matchJd} disabled={(!jdText.trim() && !selectedJobId) || !resumeText.trim()}>对比岗位匹配度</button>
                   </div>
                   {jdResult ? (
                     <div className="jd-result">
@@ -380,6 +406,26 @@ export default function App() {
                           <span className={jdResult.mode === 'live' ? 'chip ok' : 'chip'}>{jdResult.mode === 'live' ? 'LLM 分析' : '向量兜底'}</span>
                         </div>
                       </div>
+                      {jdResult.gapReport && (
+                        <div className="jd-gap-report">
+                          <h5>差距报告</h5>
+                          <p className="jd-gap-summary">{jdResult.gapReport.summary}</p>
+                          <div className="jd-keyword-groups">
+                            <div className="jd-keyword-col">
+                              <span className="jd-keyword-label">命中关键词</span>
+                              {(jdResult.gapReport.matchedKeywords || []).length
+                                ? <div className="jd-keyword-tags">{jdResult.gapReport.matchedKeywords.map((k, i) => <span key={i} className="jd-tag ok">{k}</span>)}</div>
+                                : <p className="empty">无</p>}
+                            </div>
+                            <div className="jd-keyword-col">
+                              <span className="jd-keyword-label">缺失关键词</span>
+                              {(jdResult.gapReport.missingKeywords || []).length
+                                ? <div className="jd-keyword-tags">{jdResult.gapReport.missingKeywords.map((k, i) => <span key={i} className="jd-tag miss">{k}</span>)}</div>
+                                : <p className="empty">无</p>}
+                            </div>
+                          </div>
+                        </div>
+                      )}
                       <div className="jd-columns">
                         <div className="jd-col">
                           <h5>已匹配</h5>

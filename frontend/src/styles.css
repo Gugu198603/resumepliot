@@ -982,8 +982,78 @@ button:disabled {
   margin-bottom: 6px;
 }
 
+.jd-job-select {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(145, 127, 116, 0.25);
+  background: rgba(255, 251, 246, 0.85);
+  color: var(--title);
+  font-size: 13px;
+}
+
+.jd-gap-report {
+  background: rgba(255, 251, 246, 0.72);
+  border: 1px solid rgba(145, 127, 116, 0.12);
+  border-radius: 16px;
+  padding: 14px;
+}
+
+.jd-gap-report h5 {
+  margin: 0 0 8px;
+  color: var(--title);
+}
+
+.jd-gap-summary {
+  margin: 0 0 12px;
+  line-height: 1.6;
+  color: var(--text);
+}
+
+.jd-keyword-groups {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.jd-keyword-label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-soft);
+  margin-bottom: 6px;
+}
+
+.jd-keyword-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.jd-tag {
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  line-height: 1.4;
+}
+
+.jd-tag.ok {
+  background: rgba(167, 176, 161, 0.22);
+  color: var(--title);
+  border: 1px solid var(--sage);
+}
+
+.jd-tag.miss {
+  background: rgba(183, 143, 136, 0.18);
+  color: var(--title);
+  border: 1px solid var(--rose);
+}
+
 @media (max-width: 1200px) {
   .jd-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .jd-keyword-groups {
     grid-template-columns: 1fr;
   }
 }
