@@ -14,6 +14,13 @@ test('normalizeText strips PDF private-use bullet glyphs', () => {
   assert.equal(normalizeText('数据分析看板\n■性能优化\n•项目经历'), '数据分析看板\n性能优化\n项目经历');
 });
 
+test('normalizeText drops decorative resume slogans and broken glyphs', () => {
+  assert.equal(
+    normalizeText('求职简历\n我会加油的！\n前端开发实习生某某公司2024.11-2025.2\n负责 React 组件开发�和性能优化。'),
+    '前端开发实习生某某公司2024.11-2025.2\n负责 React 组件开发和性能优化。'
+  );
+});
+
 test('splitSections extracts common resume sections', () => {
   const sections = splitSections('教育背景\n本科 计算机\n项目经历\n使用 RAG 构建检索系统');
   assert.equal(sections.length, 2);
@@ -34,6 +41,7 @@ test('splitSections classifies out-of-order PDF column text by content', () => {
     '姓名：张三',
     '求职意向：前端实习生',
     '工作经验',
+    '我会加油的',
     '基本信息',
     '前端开发实习生某某公司2024.11-2025.2',
     '负责 React 组件开发和性能优化。',
@@ -46,6 +54,34 @@ test('splitSections classifies out-of-order PDF column text by content', () => {
   assert.equal(sections[1].title, '工作经验');
   assert.equal(sections[2].title, '项目经验');
   assert.ok(!sections[2].content.includes('PERSONALRESUME'));
+  assert.ok(!sections.some((section) => section.content.includes('我会加油的')));
+});
+
+test('splitSections repairs project heading extracted after project content', () => {
+  const sections = splitSections([
+    '工作经验',
+    '前端开发实习生某某公司2024.11-2025.2',
+    '负责组件开发。',
+    '求职简历',
+    'PERSONALRESUME',
+    'Web前端中国传媒大学书卷侠项目2024.6-2024.8',
+    '项目简介：面向论文阅读场景的图表预览平台。',
+    '技术栈：Vue3+Vite+TailwindCSS+ECharts',
+    '首屏加载极致优化：按路由动态分片加载。',
+    'Web前端画布实时协作项目2025.4-2025.5',
+    '项目简介：支持多人实时编辑的在线画布。',
+    '技术栈：React+Yjs+Node.js',
+    '项目经验'
+  ].join('\n'));
+  assert.equal(sections.length, 2);
+  assert.equal(sections[0].title, '工作经验');
+  assert.equal(sections[1].title, '项目经验');
+  assert.deepEqual(sections[1].content.slice(0, 3), [
+    'Web前端中国传媒大学书卷侠项目2024.6-2024.8',
+    '项目简介：面向论文阅读场景的图表预览平台。',
+    '技术栈：Vue3+Vite+TailwindCSS+ECharts'
+  ]);
+  assert.ok(!sections[1].content.includes('PERSONALRESUME'));
 });
 
 test('detectRisks extracts technical terms from resume text dynamically', () => {

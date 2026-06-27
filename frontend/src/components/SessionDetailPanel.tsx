@@ -1,16 +1,15 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import ConversationTimeline from './ConversationTimeline';
 import { buildSectionBlocks } from '../utils/sectionBlocks';
 import type { Resume, Section, Session } from '../types/domain';
 
 const STAGES = ['背景澄清', '方案细节', '验证与结果', '反思与拓展'];
 
-export default function SessionDetailPanel({ session, resume, resumeText, onContinueSession }: { session: Session | null; resume?: Resume | null; resumeText: string; onContinueSession?: (payload: { text: string; answer: string }) => Promise<void> | void }) {
-  const [answer, setAnswer] = useState('');
-
+export default function SessionDetailPanel({ session, resume, onResumeSession }: { session: Session | null; resume?: Resume | null; onResumeSession?: () => void }) {
   const turns = session?.turns || [];
   const depth = turns.filter((turn) => String(turn.answer || '').trim()).length;
   const stageLabel = STAGES[Math.min(depth, STAGES.length - 1)];
+  const hasPendingQuestion = turns.some((turn) => turn.question && !turn.answer);
 
   const nextQuestion = useMemo(() => {
     const lastTurn = turns[turns.length - 1];
@@ -26,10 +25,11 @@ export default function SessionDetailPanel({ session, resume, resumeText, onCont
       <div className="detail-header">
         <h3>面试详情</h3>
         <p>{session.title}</p>
+        <button className="secondary-button" onClick={onResumeSession}>回到工作台继续</button>
       </div>
       <div className="detail-grid two-col">
-        <div className="detail-card"><span>记录 ID</span><strong>{session.id}</strong></div>
-        <div className="detail-card"><span>追问进度</span><strong>{turns.some((turn) => turn.question && !turn.answer) ? `第 ${depth + 1} 题待回答` : depth > 0 ? `已回答 ${depth} 轮` : '待开始'}</strong></div>
+        <div className="detail-card"><span>面试目标</span><strong>{session.goal || session.title}</strong></div>
+        <div className="detail-card"><span>追问进度</span><strong>{hasPendingQuestion ? `第 ${depth + 1} 题待回答` : depth > 0 ? `已回答 ${depth} 轮` : '待开始'}</strong></div>
       </div>
       <div className="interview-progress">
         {STAGES.map((label, idx) => (
@@ -59,13 +59,9 @@ export default function SessionDetailPanel({ session, resume, resumeText, onCont
             <ConversationTimeline turns={turns} />
           </div>
           <div className="detail-block followup-block">
-            <h4>连续追问 · 第 {depth + 1} 题「{stageLabel}」</h4>
-            <div className="message interviewer"><strong>当前问题</strong><p>{nextQuestion}</p></div>
-            <textarea value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="输入这轮回答，系统会基于上一轮回答继续追问，并生成回答反馈和改进建议。" />
-            <button onClick={async () => {
-              await onContinueSession?.({ text: resumeText || resume?.text || '', answer });
-              setAnswer('');
-            }} disabled={!answer.trim()}>提交并继续追问</button>
+            <h4>{hasPendingQuestion ? `待回答 · 第 ${depth + 1} 题「${stageLabel}」` : '继续练习'}</h4>
+            <div className="message interviewer"><strong>{hasPendingQuestion ? '当前问题' : '下一步'}</strong><p>{hasPendingQuestion ? nextQuestion : '这场面试暂无待回答问题。回到工作台后可以重开一场面试，或基于当前简历生成新的问题。'}</p></div>
+            <button onClick={onResumeSession}>回到工作台</button>
           </div>
         </div>
       </div>

@@ -487,15 +487,21 @@ app.post('/api/parse', upload.single('resume'), async (req, res) => {
       ? (await listResumes()).find((resume) => resumeFingerprint(resume.text || '') === fingerprint)
       : null;
     if (duplicate) {
+      const sections = splitSections(text);
+      const risks = detectRisks(text);
+      const parsedChanged = JSON.stringify(duplicate.sections || []) !== JSON.stringify(sections);
+      const resume = parsedChanged
+        ? await updateResume(duplicate.id, { sections, risks })
+        : duplicate;
       return res.json({
-        resumeId: duplicate.id,
-        text: duplicate.text || '',
-        sections: duplicate.sections || [],
-        risks: duplicate.risks || [],
-        kbSize: duplicate.kbSize || 0,
-        chunks: (duplicate.chunks || []).map(stripChunkForResponse),
-        vectorProvider: duplicate.vectorProvider || vectorProvider,
-        duplicateOf: duplicate.id,
+        resumeId: resume.id,
+        text: resume.text || '',
+        sections: resume.sections || [],
+        risks: resume.risks || [],
+        kbSize: resume.kbSize || 0,
+        chunks: (resume.chunks || []).map(stripChunkForResponse),
+        vectorProvider: resume.vectorProvider || vectorProvider,
+        duplicateOf: resume.id,
         reusedExisting: true
       });
     }

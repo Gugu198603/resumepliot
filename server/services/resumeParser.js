@@ -1,16 +1,26 @@
 const SECTION_HEADING_RE = /^(基本信息|个人信息|联系方式|求职意向|教育背景|校园经历|核心技能|个人技能|专业技能|技能栈|实习经历|工作经验|项目经历|项目经验|实践经历|荣誉奖项|奖项|证书|自我评价|求职简历|Education|Skills|Experience|Projects|Awards|Summary|Contact|Profile)$/i;
 const LEADING_BULLET_RE = /^[\s\u2022\u2023\u25e6\u2043\u2219\u25aa\u25ab\u25cf\u25a0\u25a1\u25ae\u25af\u25e7\uF000-\uF8FF•●▪■▮□◦‣⁃·\-–—]+/;
 const ENGLISH_STOPWORDS = new Set(['and', 'the', 'for', 'with', 'from', 'this', 'that', 'user', 'users', 'data']);
-const DECORATIVE_RESUME_RE = /^(PERSONAL\s*RESUME|PERSONALRESUME|求职简历|我一直在努力！)$/i;
+const DECORATIVE_RESUME_RE = /^(PERSONAL\s*RESUME|PERSONALRESUME|求职简历|我一直在努力[!！]?|我会加油(?:的)?[!！]?|加油[!！]?|继续努力[!！]?)$/i;
 const PROJECT_SECTION_RE = /^(项目经历|项目经验|实践经历|Projects)$/i;
 const DATE_RANGE_RE = /(?:19|20)\d{2}(?:[./-]\d{1,2})?\s*[-–—]\s*(?:(?:19|20)\d{2}(?:[./-]\d{1,2})?|至今|Present)/i;
 
 function cleanLine(line = '') {
   return String(line)
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f\uF000-\uF8FF\uFFFD]/g, '')
     .replace(/[ \t]{2,}/g, ' ')
     .trim()
     .replace(LEADING_BULLET_RE, '')
     .trim();
+}
+
+function isDecorativeLine(line = '') {
+  const text = cleanLine(line);
+  if (!text) return true;
+  if (DECORATIVE_RESUME_RE.test(text)) return true;
+  if (!/[\p{L}\p{N}]/u.test(text)) return true;
+  const meaningfulChars = (text.match(/[\p{Script=Han}A-Za-z0-9.+#@-]/gu) || []).length;
+  return text.length >= 6 && meaningfulChars / text.length < 0.35;
 }
 
 export function normalizeText(text = '') {
@@ -18,9 +28,10 @@ export function normalizeText(text = '') {
     .replace(/\r/g, '')
     .replace(/\f/g, '\n')
     .replace(/[\u00a0\u1680\u2000-\u200b\u202f\u205f\u3000\ufeff]/g, ' ')
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f\uF000-\uF8FF\uFFFD]/g, '')
     .split('\n')
     .map(cleanLine)
-    .filter(Boolean)
+    .filter((line) => !isDecorativeLine(line))
     .join('\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
@@ -29,8 +40,7 @@ export function normalizeText(text = '') {
 function cleanSectionContent(content = []) {
   return content
     .map(cleanLine)
-    .filter(Boolean)
-    .filter((line) => !DECORATIVE_RESUME_RE.test(line));
+    .filter((line) => !isDecorativeLine(line));
 }
 
 function isProjectStart(line = '') {
@@ -73,21 +83,45 @@ function pushSection(sections, section) {
   sections.push({ title, content });
 }
 
+function splitMixedProjectSections(sections = []) {
+  const result = [];
+  for (const section of sections) {
+    if (!/^(工作经验|实习经历|Experience)$/i.test(section.title)) {
+      result.push(section);
+      continue;
+    }
+    const projectStart = section.content.findIndex((line, index) => index > 0 && isProjectStart(line));
+    if (projectStart < 0) {
+      result.push(section);
+      continue;
+    }
+    result.push({ title: section.title, content: section.content.slice(0, projectStart) });
+    result.push({ title: '项目经验', content: section.content.slice(projectStart) });
+  }
+  return result.filter((section) => section.content.length);
+}
+
 export function splitSections(text) {
-  const lines = repairTrailingSectionHeadings(text.split('\n').map(cleanLine).filter(Boolean));
+  const lines = repairTrailingSectionHeadings(text.split('\n').map(cleanLine).filter((line) => !isDecorativeLine(line)));
   const sections = [];
   let current = { title: '未分类', content: [] };
 
   for (const line of lines) {
     if (SECTION_HEADING_RE.test(line)) {
+      if (/^(基本信息|个人信息|联系方式)$/i.test(line) && !current.content.length && sections.some((section) => section.title === '基本信息')) {
+        continue;
+      }
       pushSection(sections, current);
       current = { title: line, content: [] };
+    } else if (/^(工作经验|实习经历|Experience)$/i.test(current.title) && isProjectStart(line)) {
+      pushSection(sections, current);
+      current = { title: '项目经验', content: [line] };
     } else {
       current.content.push(line);
     }
   }
   pushSection(sections, current);
-  return sections;
+  return splitMixedProjectSections(sections);
 }
 
 function addTerm(terms, seen, raw) {

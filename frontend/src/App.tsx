@@ -2,11 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import ResumeDetailPanel from './components/ResumeDetailPanel';
 import RunDetailPanel from './components/RunDetailPanel';
 import SessionDetailPanel from './components/SessionDetailPanel';
+import ConversationTimeline from './components/ConversationTimeline';
 import { buildSectionBlocks } from './utils/sectionBlocks';
 import type {
-  AgentOutput,
   Dashboard,
-  ExecutionStep,
   JdMatchResult,
   JobDescription,
   JobMatch,
@@ -14,15 +13,14 @@ import type {
   LlmReadiness,
   ParseResult,
   QdrantReadiness,
-  RetrievedChunk,
   Resume,
   ResumeGenerationPreview,
   Run,
   Session
 } from './types/domain';
 
-type Tab = 'workspace' | 'resumes' | 'runs' | 'sessions' | 'dashboard';
-type DisplayTab = 'overview' | 'resume' | 'generated' | 'retrieval' | 'agents' | 'history' | 'jd';
+type Tab = 'workspace' | 'resumes' | 'sessions' | 'dashboard';
+type DisplayTab = 'overview' | 'resume' | 'generated' | 'jd';
 type PreviewDensity = 'standard' | 'compact' | 'dense';
 type SpeechRecognitionResultEvent = Event & {
   resultIndex: number;
@@ -45,20 +43,20 @@ const MAIN_NAV_ITEMS: Array<{ key: string; label: string; target: Tab; displayTa
   { key: 'workbench', label: '工作台', target: 'workspace', displayTab: 'overview' },
   { key: 'resumes', label: '我的简历', target: 'resumes' },
   { key: 'sessions', label: '面试记录', target: 'sessions' },
-  { key: 'job-match', label: '岗位匹配', target: 'workspace', displayTab: 'jd' },
   { key: 'diagnostics', label: '管理与诊断', target: 'dashboard' }
 ];
 
 const WORKBENCH_TABS: Array<[DisplayTab, string]> = [
   ['overview', '当前进度'],
   ['resume', '当前简历'],
-  ['generated', '简历生成']
+  ['generated', '简历生成'],
+  ['jd', '岗位匹配']
 ];
 
 const WORKSPACE_STATE_KEY = 'resumepilot.workspaceState';
 const DEFAULT_GOAL = '请围绕项目经历生成可深挖的面试问题';
-const TAB_VALUES: Tab[] = ['workspace', 'resumes', 'runs', 'sessions', 'dashboard'];
-const DISPLAY_TAB_VALUES: DisplayTab[] = ['overview', 'resume', 'generated', 'retrieval', 'agents', 'history', 'jd'];
+const TAB_VALUES: Tab[] = ['workspace', 'resumes', 'sessions', 'dashboard'];
+const DISPLAY_TAB_VALUES: DisplayTab[] = ['overview', 'resume', 'generated', 'jd'];
 
 interface PersistedWorkspaceState {
   tab?: Tab;
@@ -283,10 +281,7 @@ export default function App() {
   const [resumeText, setResumeText] = useState('');
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
   const [goal, setGoal] = useState(persistedState.goal || DEFAULT_GOAL);
-  const [executionPlan, setExecutionPlan] = useState<ExecutionStep[]>([]);
-  const [agentOutputs, setAgentOutputs] = useState<AgentOutput[]>([]);
   const [loading, setLoading] = useState<string | null>(null);
-  const [vectorProvider, setVectorProvider] = useState<string>('memory');
   const [resumes, setResumes] = useState<Resume[]>([]);
   const [runs, setRuns] = useState<Run[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -301,7 +296,6 @@ export default function App() {
   const [displayTab, setDisplayTab] = useState<DisplayTab>(persistedState.displayTab || 'overview');
   const [activeQuestion, setActiveQuestion] = useState('');
   const [answerDraft, setAnswerDraft] = useState(persistedState.answerDraft || '');
-  const [retrievalPreview, setRetrievalPreview] = useState<RetrievedChunk[]>([]);
   const [activeCritique, setActiveCritique] = useState<string[]>([]);
   const [activeImproved, setActiveImproved] = useState('');
   const [jdText, setJdText] = useState(persistedState.jdText || '');
@@ -316,20 +310,6 @@ export default function App() {
   const [isListening, setIsListening] = useState(false);
   const [speechHint, setSpeechHint] = useState('');
   const [importNotice, setImportNotice] = useState('');
-
-  const agentCards = useMemo(() => {
-    const map = new Map<string, unknown>();
-    for (const item of agentOutputs) {
-      map.set(item.step?.agent || 'unknown', item.output);
-    }
-    return [
-      { name: 'planner', output: map.get('planner') },
-      { name: 'retriever', output: map.get('retriever') },
-      { name: 'interviewer', output: map.get('interviewer') },
-      { name: 'critic', output: map.get('critic') },
-      { name: 'writer', output: map.get('writer') }
-    ];
-  }, [agentOutputs]);
 
   const currentQuestion = useMemo(() => {
     const turns = selectedSession?.turns || [];
@@ -389,7 +369,6 @@ export default function App() {
     }
     setParseResult(data);
     setResumeText(data.text);
-    setVectorProvider(data.vectorProvider || 'memory');
     if (data.reusedExisting) {
       setImportNotice('检测到这份简历已经导入过，已直接复用已有记录，没有新增重复简历。');
     }
@@ -408,11 +387,7 @@ export default function App() {
       body: JSON.stringify({ text: resumeText, goal, answer: '', history: [], sessionId: selectedSession?.id || null, resumeId: parseResult?.resumeId || selectedSession?.resumeId || null })
     });
     const data = await res.json();
-    setExecutionPlan(data.executionPlan || []);
-    setAgentOutputs(data.agentOutputs || []);
-    setVectorProvider(data.vectorProvider || 'memory');
     setActiveQuestion(data.questions?.detail?.[0] || data.questions?.basic?.[0] || '');
-    setRetrievalPreview(data.retrieved || []);
     setActiveCritique(data.critique?.feedback || []);
     setActiveImproved(data.rewrite?.improvedAnswer || '');
     setDisplayTab('overview');
@@ -458,7 +433,6 @@ export default function App() {
     const data = await res.json();
     setSelectedSession(data.session || null);
     setActiveQuestion(data.questions?.detail?.[0] || data.questions?.basic?.[0] || '');
-    setRetrievalPreview(data.retrieved || []);
     setActiveCritique(data.critique?.feedback || []);
     setActiveImproved(data.rewrite?.improvedAnswer || '');
     setAnswerDraft('');
@@ -551,7 +525,6 @@ export default function App() {
     if (resume) {
       setResumeText(resume.text || '');
       setParseResult(resumeToParseResult(resume));
-      setVectorProvider(resume.vectorProvider || 'memory');
     }
   }
   async function handleCorrectionSaved(resume: Resume) {
@@ -659,7 +632,7 @@ export default function App() {
         <div className="tab-row">
           {MAIN_NAV_ITEMS.map((item) => {
             const active = item.key === 'workbench'
-              ? tab === 'workspace' && displayTab !== 'jd'
+              ? tab === 'workspace'
               : tab === item.target && (!item.displayTab || displayTab === item.displayTab);
             return (
               <button
@@ -698,34 +671,18 @@ export default function App() {
             </div>
 
             <div className="control-section">
-              <div className="step-label"><span>3</span><strong>回答当前问题</strong></div>
-              <div className={currentQuestion ? 'current-question-card active' : 'current-question-card'}>
-                <span>当前问题</span>
-                <p>{currentQuestion || '先点击“开始面试”，这里会显示第一道面试问题。'}</p>
-              </div>
-              <textarea className="answer-input" value={answerDraft} onChange={(e) => setAnswerDraft(e.target.value)} placeholder="在这里输入回答；也可以点击下方“语音回答”自动转文字。" />
-              <div className="answer-tools">
-                <button className="secondary-button voice-button" type="button" onClick={startVoiceAnswer} disabled={!currentQuestion || isListening}>
-                  {isListening ? '正在聆听...' : '语音回答'}
-                </button>
-                <button className="primary-action submit-answer-button" type="button" onClick={() => continueSession({ text: resumeText, answer: answerDraft })} disabled={!selectedSession || !currentQuestion || !answerDraft.trim()}>
-                  提交回答并继续追问
-                </button>
-                {speechHint ? <small>{speechHint}</small> : <small>回答完成后直接提交，系统会生成下一轮追问。</small>}
-              </div>
-            </div>
-
-            <div className="control-section">
-              <div className="step-label"><span>4</span><strong>其他动作</strong></div>
+              <div className="step-label"><span>3</span><strong>开始面试</strong></div>
               <div className="primary-actions">
                 <button className="action-button primary-action" onClick={runAgents} disabled={!resumeText.trim()}>
                   <strong>开始面试</strong>
                   <span>根据简历和目标生成第一轮问题</span>
                 </button>
-                <button className="action-button secondary-button" onClick={createSession} disabled={!goal.trim()}>
-                  <strong>重开一场面试</strong>
-                  <span>清晰区分新的练习记录</span>
-                </button>
+                {selectedSession ? (
+                  <button className="action-button secondary-button" onClick={createSession} disabled={!goal.trim()}>
+                    <strong>重开一场面试</strong>
+                    <span>清晰区分新的练习记录</span>
+                  </button>
+                ) : null}
               </div>
             </div>
 
@@ -755,13 +712,31 @@ export default function App() {
                   <div className="overview-grid">
                     <div className="detail-card"><span>当前问题</span><strong>{currentQuestion ? `第 ${answeredTurns + 1} 题待回答` : '待生成'}</strong></div>
                     <div className="detail-card"><span>本轮反馈</span><strong>{activeCritique.length ? `${activeCritique.length} 条` : '待生成'}</strong></div>
-                    <div className="detail-card"><span>参考材料</span><strong>{retrievalPreview.length}</strong></div>
+                    <div className="detail-card"><span>已回答</span><strong>{answeredTurns} 轮</strong></div>
                     <div className="detail-card"><span>历史练习</span><strong>{sessions.length}</strong></div>
                   </div>
                   <div className={currentQuestion ? 'question-board active' : 'question-board'}>
                     <span>面试官提问</span>
                     <h3>{currentQuestion || '点击左侧“开始面试”后，第一道问题会显示在这里。'}</h3>
-                    <p>{currentQuestion ? '请在左侧回答框输入或语音回答，然后提交，系统会继续追问并给出反馈。' : '当前还没有待回答的问题。'}</p>
+                    <p>{currentQuestion ? '请在下方输入或语音回答，然后提交，系统会继续追问并给出反馈。' : '当前还没有待回答的问题。'}</p>
+                  </div>
+                  <div className="answer-board">
+                    <div className="answer-board-head">
+                      <div>
+                        <span>你的回答</span>
+                        <strong>{currentQuestion ? `第 ${answeredTurns + 1} 题` : '等待问题'}</strong>
+                      </div>
+                      <button className="secondary-button voice-button" type="button" onClick={startVoiceAnswer} disabled={!currentQuestion || isListening}>
+                        {isListening ? '正在聆听...' : '语音回答'}
+                      </button>
+                    </div>
+                    <textarea className="answer-input" value={answerDraft} onChange={(e) => setAnswerDraft(e.target.value)} disabled={!currentQuestion} placeholder={currentQuestion ? '在这里输入回答；也可以点击“语音回答”自动转文字。' : '开始面试后，这里用于回答当前问题。'} />
+                    <div className="answer-tools">
+                      <button className="primary-action submit-answer-button" type="button" onClick={() => continueSession({ text: resumeText, answer: answerDraft })} disabled={!selectedSession || !currentQuestion || !answerDraft.trim()}>
+                        提交回答并继续追问
+                      </button>
+                      {speechHint ? <small>{speechHint}</small> : <small>{currentQuestion ? '回答完成后直接提交，系统会生成下一轮追问，并把历史问答保留在下方。' : '当前还没有待回答的问题。'}</small>}
+                    </div>
                   </div>
                   <div className="trace-row compact-trace">
                     {[
@@ -778,6 +753,10 @@ export default function App() {
                       </div>
                     ))}
                   </div>
+                  <div className="detail-block conversation-history">
+                    <h4>历史问答</h4>
+                    <ConversationTimeline turns={selectedSession?.turns || []} />
+                  </div>
                 </div>
               )}
 
@@ -785,10 +764,6 @@ export default function App() {
                 <div className="display-section">
                   {parseResult ? (
                     <div className="resume-parse-view">
-                      <div className="detail-grid two-col">
-                        <div className="detail-card"><span>原文字符数</span><strong>{parseResult.text?.length || 0}</strong></div>
-                        <div className="detail-card"><span>解析分块</span><strong>{parseResult.kbSize}</strong></div>
-                      </div>
                       <div className="detail-block">
                         <h4>识别模块</h4>
                         <div className="section-list compact">
@@ -801,24 +776,8 @@ export default function App() {
                         </div>
                       </div>
                     </div>
-                  ) : <p className="empty">解析简历后，这里会展示识别出的模块和风险术语。</p>}
+                  ) : <p className="empty">解析简历后，这里会展示识别出的简历模块。</p>}
                   {parseResult?.risks?.length ? <div className="chip-wrap">{parseResult.risks.map((risk) => <span key={risk.term} className="chip danger">{risk.term}</span>)}</div> : null}
-                </div>
-              )}
-
-              {displayTab === 'retrieval' && (
-                <div className="display-section">
-                  <div className="retrieval-grid">
-                    {retrievalPreview.length ? retrievalPreview.map((item, idx) => (
-                      <div className="retrieval-card" key={idx}>
-                        <div className="retrieval-meta">
-                          <span>{item.source || 'resume'}</span>
-                          <strong>score {item.score}</strong>
-                        </div>
-                        <p>{item.content}</p>
-                      </div>
-                    )) : <p className="empty">开始面试或继续追问后，这里会展示系统参考过的简历和历史回答片段。</p>}
-                  </div>
                 </div>
               )}
 
@@ -898,22 +857,6 @@ export default function App() {
                         ) : null}
                       </div>
                     ) : <p className="empty">点击“生成预览”后，这里会展示 JSON Resume 和事实校验结果。</p>}
-                  </div>
-                </div>
-              )}
-
-              {displayTab === 'agents' && (
-                <div className="display-section">
-                  <div className="agent-stack">
-                    {agentCards.map((card) => (
-                      <div className="agent-card" key={card.name}>
-                        <div className="agent-head">
-                          <strong>{card.name}</strong>
-                          <span>{card.output ? 'active' : 'idle'}</span>
-                        </div>
-                        <pre>{card.output ? JSON.stringify(card.output, null, 2) : 'No output yet.'}</pre>
-                      </div>
-                    ))}
                   </div>
                 </div>
               )}
@@ -1012,7 +955,7 @@ export default function App() {
 
       {tab === 'resumes' && (
         <main className="grid grid-wide detail-layout">
-          <section className="card">
+          <section className="card detail-list-card">
             <div className="resume-list-head">
               <h2>我的简历</h2>
             </div>
@@ -1038,17 +981,10 @@ export default function App() {
         </main>
       )}
 
-      {tab === 'runs' && (
-        <main className="grid grid-wide detail-layout">
-          <section className="card"><h2>运行诊断</h2><div className="risk-list">{runs.length ? runs.map((run) => <div className="risk-item" key={run.id}><strong>{run.goal || '未设置目标'}</strong><p>{run.createdAt}</p><p>{run.skill?.name || run.skillId || '未知能力'} · {run.status || '已完成'}</p><button onClick={() => openRun(run.id)}>查看详情</button></div>) : <p className="empty">还没有运行记录。</p>}</div></section>
-          <section className="card tall"><RunDetailPanel run={selectedRun} onRetry={retryRun} /></section>
-        </main>
-      )}
-
       {tab === 'sessions' && (
-        <main className="grid grid-wide detail-layout">
-          <section className="card"><h2>面试记录</h2><div className="risk-list">{sessions.length ? sessions.map((session) => <button className="risk-item resume-item clickable-card" key={session.id} onClick={() => openSession(session.id)}><strong>{session.title}</strong><p>{session.createdAt}</p><p>{(session.turns || []).length} 轮追问</p><span className="inline-action">查看详情</span></button>) : <p className="empty">还没有面试记录。</p>}</div></section>
-          <section className="card tall"><SessionDetailPanel session={selectedSession} resume={selectedResume || undefined} resumeText={resumeText} onContinueSession={continueSession} /></section>
+        <main className="grid grid-wide detail-layout sessions-layout">
+          <section className="card detail-list-card session-list-card"><h2>面试记录</h2><div className="risk-list">{sessions.length ? sessions.map((session) => <button className="risk-item resume-item clickable-card" key={session.id} onClick={() => openSession(session.id)}><strong>{session.title}</strong><p>{session.createdAt}</p><p>{(session.turns || []).length} 轮追问</p><span className="inline-action">查看详情</span></button>) : <p className="empty">还没有面试记录。</p>}</div></section>
+          <section className="card tall session-detail-card"><SessionDetailPanel session={selectedSession} resume={selectedResume || undefined} onResumeSession={() => { setTab('workspace'); setDisplayTab('overview'); }} /></section>
         </main>
       )}
 

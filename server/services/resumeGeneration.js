@@ -8,7 +8,23 @@ const rootDir = path.resolve(__dirname, '../..');
 const skillSrcDir = path.join(rootDir, 'skills/resume-generation-skill/src');
 
 function normalizeLine(line = '') {
-  return String(line || '').replace(/\s+/g, ' ').trim();
+  return String(line || '')
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f\uF000-\uF8FF\uFFFD]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isDecorativeLine(line = '') {
+  const text = normalizeLine(line);
+  if (!text) return true;
+  if (/^(PERSONAL\s*RESUME|PERSONALRESUME|求职简历|我一直在努力[!！]?|我会加油(?:的)?[!！]?|加油[!！]?|继续努力[!！]?)$/i.test(text)) return true;
+  if (!/[\p{L}\p{N}]/u.test(text)) return true;
+  const meaningfulChars = (text.match(/[\p{Script=Han}A-Za-z0-9.+#@-]/gu) || []).length;
+  return text.length >= 6 && meaningfulChars / text.length < 0.35;
+}
+
+function cleanContentLines(lines = []) {
+  return lines.map(normalizeLine).filter((line) => !isDecorativeLine(line));
 }
 
 function sectionText(section) {
@@ -79,7 +95,7 @@ function parseRoleAndOrg(title = '') {
 
 function buildBasics(resume, sections, adjustment) {
   const basicSection = findSection(sections, ['基本', '个人', '联系', 'contact', 'profile']) || sections[0] || null;
-  const lines = basicSection?.content || [];
+  const lines = cleanContentLines(basicSection?.content || []);
   const merged = lines.join(' ');
   const { email, phone } = splitMetaLine(merged);
   const name = normalizeLine(lines[0] || '').split(/[，,|｜\s]/).filter(Boolean)[0] || '';
@@ -98,7 +114,7 @@ function buildSkills(sections = []) {
   const skillSections = sections.filter((section) => includesAny(section.title || '', ['技能', 'skills', '技术']));
   return skillSections.map((section) => ({
     name: section.title,
-    keywords: (section.content || [])
+    keywords: cleanContentLines(section.content || [])
       .flatMap((line) => normalizeLine(line).split(/[、,，;；/|｜\s]+/))
       .map((item) => item.trim())
       .filter((item) => item.length >= 2)
@@ -109,7 +125,7 @@ function buildSkills(sections = []) {
 
 function buildWork(sections = []) {
   const workSections = sections.filter((section) => includesAny(section.title || '', ['工作', '实习', 'experience']));
-  return workSections.flatMap((section) => splitTitledEntries(section.content || []).map((entry) => {
+  return workSections.flatMap((section) => splitTitledEntries(cleanContentLines(section.content || [])).map((entry) => {
     const parsed = parseRoleAndOrg(entry.title);
     return {
       name: parsed.name || normalizeLine(section.title),
@@ -125,7 +141,7 @@ function buildWork(sections = []) {
 
 function buildProjects(sections = []) {
   const projectSections = sections.filter((section) => includesAny(section.title || '', ['项目', 'projects']));
-  return projectSections.flatMap((section) => splitTitledEntries(section.content || []).map((entry) => {
+  return projectSections.flatMap((section) => splitTitledEntries(cleanContentLines(section.content || [])).map((entry) => {
     const parsed = parseRoleAndOrg(entry.title);
     return {
       name: parsed.name || normalizeLine(entry.title || section.title),
@@ -143,9 +159,10 @@ function buildEducation(sections = []) {
   return educationSections.map((section) => {
     const text = sectionText(section);
     const dates = text.match(/\b(?:19|20)\d{2}[./-]\d{1,2}\b/g) || [];
+    const lines = cleanContentLines(section.content || []);
     return {
-      institution: normalizeLine((section.content || [])[0] || section.title),
-      area: normalizeLine((section.content || [])[1] || ''),
+      institution: normalizeLine(lines[0] || section.title),
+      area: normalizeLine(lines[1] || ''),
       startDate: dates[0] || '',
       endDate: dates[1] || '',
       source_ids: ['resume-original']
