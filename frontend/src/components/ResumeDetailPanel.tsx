@@ -69,10 +69,6 @@ export default function ResumeDetailPanel({ resume, onCorrectionSaved }: { resum
         <div className="detail-card"><span>KB Size</span><strong>{resume.kbSize || '-'}</strong></div>
       </div>
       <div className="detail-block">
-        <h4>Resume Full Text</h4>
-        <pre className="resume-full-text">{resume.text || ''}</pre>
-      </div>
-      <div className="detail-block">
         <h4>Risk Terms</h4>
         {riskCount ? (
           <div className="chip-wrap">

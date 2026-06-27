@@ -547,11 +547,6 @@ pre {
   display: grid;
   gap: 16px;
 }
-.resume-full-text {
-  min-height: 0;
-  max-height: none;
-  overflow: visible;
-}
 .timeline { display: grid; gap: 16px; }
 .timeline-item { display: grid; grid-template-columns: 36px 1fr; gap: 12px; align-items: start; }
 .timeline-node { width: 36px; height: 36px; border-radius: 999px; background: linear-gradient(135deg, #a99588 0%, #8e9b89 100%); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; }

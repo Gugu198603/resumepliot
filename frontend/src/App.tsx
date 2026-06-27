@@ -398,10 +398,6 @@ export default function App() {
                         <div className="detail-card"><span>解析分块</span><strong>{parseResult.kbSize}</strong></div>
                       </div>
                       <div className="detail-block">
-                        <h4>完整原文</h4>
-                        <pre className="resume-full-text">{parseResult.text || ''}</pre>
-                      </div>
-                      <div className="detail-block">
                         <h4>识别模块</h4>
                         <div className="section-list compact">
                           {parseResult.sections.length ? parseResult.sections.map((section) => (
@@ -409,7 +405,7 @@ export default function App() {
                               <h5>{section.title}</h5>
                               <div className="section-content">{buildSectionBlocks(section.content).map((block, idx) => <p className={`section-block ${block.kind}`} key={idx}>{block.text}</p>)}</div>
                             </div>
-                          )) : <p className="empty">未识别到结构化模块，请查看上方完整原文。</p>}
+                          )) : <p className="empty">未识别到结构化模块，请尝试重新上传或编辑解析结果。</p>}
                         </div>
                       </div>
                     </div>
