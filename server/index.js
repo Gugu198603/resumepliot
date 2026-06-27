@@ -364,10 +364,18 @@ app.post('/api/resumes/:id/generation-preview', async (req, res) => {
     const resume = await getResume(req.params.id);
     if (!resume) return res.status(404).json({ error: 'Resume not found' });
     const adjustment = String(req.body?.adjustment || '').trim();
-    const result = await generateResumePreview({ resume, adjustment });
+    let jobDescription = String(req.body?.jdText || req.body?.jobDescription || '').trim();
+    const jobId = req.body?.jobId || null;
+    if (jobId && !jobDescription) {
+      const job = await getJobDescription(jobId);
+      if (!job) return res.status(404).json({ error: 'Job not found' });
+      jobDescription = job.text || '';
+    }
+    const result = await generateResumePreview({ resume, adjustment, jobDescription });
     res.status(result.ok ? 200 : 422).json({
       resumeId: resume.id,
       adjustment,
+      jobOptimizationAvailable: Boolean(jobDescription),
       ...result
     });
   } catch (error) {

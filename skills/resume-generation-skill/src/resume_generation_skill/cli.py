@@ -13,7 +13,8 @@ def main() -> int:
         payload = json.load(sys.stdin)
         profile = payload.get("careerProfile") or payload
         output_path = payload.get("outputPath")
-        result = ResumeGenerationSkill().generate_resume_json(profile, output_path)
+        job_description = payload.get("jobDescription") or payload.get("jdText") or ""
+        result = ResumeGenerationSkill().generate_resume_json(profile, output_path, job_description=job_description)
         print(json.dumps(result.to_dict(), ensure_ascii=False))
         return 0 if result.ok else 2
     except Exception as error:  # pragma: no cover - defensive CLI boundary

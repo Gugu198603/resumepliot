@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from resume_generation_skill import FactValidator, ResumeGenerationSkill, career_profile_to_json_resume
+from resume_generation_skill import FactValidator, ResumeGenerationSkill, career_profile_to_json_resume, optimize_for_job
 
 
 def sample_profile():
@@ -98,11 +98,30 @@ class ResumeGenerationSkillTest(unittest.TestCase):
         profile = sample_profile()
         with tempfile.TemporaryDirectory() as tmpdir:
             output = Path(tmpdir) / "resume.json"
-            result = ResumeGenerationSkill().generate_resume_json(profile, str(output))
+            result = ResumeGenerationSkill().generate_resume_json(
+                profile,
+                str(output),
+                job_description="高级前端工程师，必须熟悉 React TypeScript，优先 Vite，有性能优化经验。",
+            )
 
             self.assertTrue(result.ok)
             self.assertTrue(output.exists())
             self.assertEqual(result.resume["meta"]["source"], "ResumePilot")
+            self.assertTrue(result.optimization["available"])
+            self.assertGreaterEqual(result.optimization["match"]["score"], 60)
+
+    def test_job_optimizer_reports_missing_keywords_and_chain_hint(self):
+        resume = career_profile_to_json_resume(sample_profile())
+        optimization = optimize_for_job(
+            resume,
+            "高级前端工程师，必须熟悉 React、TypeScript、GraphQL，优先有 Kubernetes 和性能优化经验。",
+        )
+
+        self.assertTrue(optimization["available"])
+        self.assertEqual(optimization["source"], "job-application-optimizer-adapted")
+        self.assertIn("GraphQL", optimization["match"]["missing"]["primary"])
+        self.assertIn("agentChainHint", optimization)
+        self.assertTrue(optimization["actions"])
 
 
 if __name__ == "__main__":

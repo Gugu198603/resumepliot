@@ -9,6 +9,7 @@ from typing import Any, Dict, Mapping, Optional
 
 from .career_profile import JsonDict
 from .fact_validator import FactValidationReport, FactValidator
+from .job_optimizer import optimize_for_job
 from .json_resume import career_profile_to_json_resume
 
 
@@ -18,6 +19,7 @@ class GenerationResult:
     resume: JsonDict
     profile_validation: FactValidationReport
     resume_validation: FactValidationReport
+    optimization: JsonDict
     output_path: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
@@ -26,6 +28,7 @@ class GenerationResult:
             "resume": self.resume,
             "profile_validation": self.profile_validation.to_dict(),
             "resume_validation": self.resume_validation.to_dict(),
+            "optimization": self.optimization,
             "output_path": self.output_path,
         }
 
@@ -33,7 +36,7 @@ class GenerationResult:
 class ResumeGenerationSkill:
     """Generate JSON Resume only when all facts are evidence-backed."""
 
-    def generate_resume_json(self, career_profile: Mapping[str, Any], output_path: Optional[str] = None) -> GenerationResult:
+    def generate_resume_json(self, career_profile: Mapping[str, Any], output_path: Optional[str] = None, job_description: str = "") -> GenerationResult:
         validator = FactValidator.from_profile(career_profile)
         profile_report = validator.validate_career_profile(career_profile)
         if not profile_report.ok:
@@ -42,6 +45,7 @@ class ResumeGenerationSkill:
                 resume={},
                 profile_validation=profile_report,
                 resume_validation=FactValidationReport(ok=False, issues=[]),
+                optimization={"available": False, "reason": "CareerProfile validation failed."},
                 output_path=None,
             )
 
@@ -53,8 +57,11 @@ class ResumeGenerationSkill:
                 resume=resume,
                 profile_validation=profile_report,
                 resume_validation=resume_report,
+                optimization={"available": False, "reason": "Generated JSON Resume validation failed."},
                 output_path=None,
             )
+
+        optimization = optimize_for_job(resume, job_description)
 
         written_path = None
         if output_path:
@@ -68,5 +75,6 @@ class ResumeGenerationSkill:
             resume=resume,
             profile_validation=profile_report,
             resume_validation=resume_report,
+            optimization=optimization,
             output_path=written_path,
         )

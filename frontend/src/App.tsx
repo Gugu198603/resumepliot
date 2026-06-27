@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import ResumeDetailPanel from './components/ResumeDetailPanel';
-import ResumeComparePanel from './components/ResumeComparePanel';
 import RunDetailPanel from './components/RunDetailPanel';
 import SessionDetailPanel from './components/SessionDetailPanel';
 import { buildSectionBlocks } from './utils/sectionBlocks';
@@ -15,15 +14,124 @@ import type {
   LlmReadiness,
   ParseResult,
   QdrantReadiness,
-  ResumeComparison,
   RetrievedChunk,
   Resume,
+  ResumeGenerationPreview,
   Run,
   Session
 } from './types/domain';
 
 type Tab = 'workspace' | 'resumes' | 'runs' | 'sessions' | 'dashboard';
-type DisplayTab = 'overview' | 'resume' | 'retrieval' | 'agents' | 'history' | 'jd';
+type DisplayTab = 'overview' | 'resume' | 'generated' | 'retrieval' | 'agents' | 'history' | 'jd';
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function asText(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function asRecordList(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.map(asRecord).filter((item) => Object.keys(item).length) : [];
+}
+
+function asTextList(value: unknown): string[] {
+  return Array.isArray(value) ? value.map(asText).filter(Boolean) : [];
+}
+
+function periodOf(item: Record<string, unknown>) {
+  return [asText(item.startDate), asText(item.endDate)].filter(Boolean).join(' - ');
+}
+
+function GeneratedResumeCard({ resume }: { resume: Record<string, unknown> }) {
+  const basics = asRecord(resume.basics);
+  const work = asRecordList(resume.work);
+  const projects = asRecordList(resume.projects);
+  const skills = asRecordList(resume.skills);
+  const education = asRecordList(resume.education);
+
+  return (
+    <div className="generated-resume-card">
+      <div className="generated-resume-head">
+        <div>
+          <h5>{asText(basics.name) || '未命名候选人'}</h5>
+          {asText(basics.label) ? <p>{asText(basics.label)}</p> : null}
+        </div>
+        <div className="generated-contact">
+          {[asText(basics.email), asText(basics.phone)].filter(Boolean).map((item) => <span key={item}>{item}</span>)}
+        </div>
+      </div>
+
+      {asText(basics.summary) ? (
+        <section className="generated-section">
+          <h6>个人简介</h6>
+          <p>{asText(basics.summary)}</p>
+        </section>
+      ) : null}
+
+      {work.length ? (
+        <section className="generated-section">
+          <h6>工作经历</h6>
+          {work.map((item, index) => (
+            <article className="generated-item" key={`${asText(item.name)}-${index}`}>
+              <div className="generated-item-title">
+                <strong>{[asText(item.name), asText(item.position)].filter(Boolean).join(' · ') || '未命名经历'}</strong>
+                {periodOf(item) ? <span>{periodOf(item)}</span> : null}
+              </div>
+              {asText(item.summary) ? <p>{asText(item.summary)}</p> : null}
+              {asTextList(item.highlights).length ? <ul>{asTextList(item.highlights).map((line, idx) => <li key={idx}>{line}</li>)}</ul> : null}
+            </article>
+          ))}
+        </section>
+      ) : null}
+
+      {projects.length ? (
+        <section className="generated-section">
+          <h6>项目经历</h6>
+          {projects.map((item, index) => (
+            <article className="generated-item" key={`${asText(item.name)}-${index}`}>
+              <div className="generated-item-title">
+                <strong>{asText(item.name) || '未命名项目'}</strong>
+                {periodOf(item) ? <span>{periodOf(item)}</span> : null}
+              </div>
+              {asText(item.description) ? <p>{asText(item.description)}</p> : null}
+              {asTextList(item.highlights).length ? <ul>{asTextList(item.highlights).map((line, idx) => <li key={idx}>{line}</li>)}</ul> : null}
+            </article>
+          ))}
+        </section>
+      ) : null}
+
+      {skills.length ? (
+        <section className="generated-section">
+          <h6>技能</h6>
+          <div className="generated-skill-list">
+            {skills.map((item, index) => (
+              <div className="generated-skill" key={`${asText(item.name)}-${index}`}>
+                <strong>{asText(item.name) || '技能'}</strong>
+                <div className="chip-wrap">{asTextList(item.keywords).map((keyword) => <span className="chip" key={keyword}>{keyword}</span>)}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {education.length ? (
+        <section className="generated-section">
+          <h6>教育经历</h6>
+          {education.map((item, index) => (
+            <article className="generated-item" key={`${asText(item.institution)}-${index}`}>
+              <div className="generated-item-title">
+                <strong>{[asText(item.institution), asText(item.area), asText(item.studyType)].filter(Boolean).join(' · ') || '教育经历'}</strong>
+                {periodOf(item) ? <span>{periodOf(item)}</span> : null}
+              </div>
+            </article>
+          ))}
+        </section>
+      ) : null}
+    </div>
+  );
+}
 
 export default function App() {
   const [resumeText, setResumeText] = useState('');
@@ -37,9 +145,6 @@ export default function App() {
   const [runs, setRuns] = useState<Run[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [selectedResume, setSelectedResume] = useState<Resume | null>(null);
-  const [compareIds, setCompareIds] = useState<string[]>([]);
-  const [comparison, setComparison] = useState<ResumeComparison | null>(null);
-  const [resumeView, setResumeView] = useState<'detail' | 'compare'>('detail');
   const [selectedRun, setSelectedRun] = useState<Run | null>(null);
   const [selectedSession, setSelectedSession] = useState<Session | null>(null);
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
@@ -59,16 +164,8 @@ export default function App() {
   const [jobs, setJobs] = useState<JobDescription[]>([]);
   const [selectedJobId, setSelectedJobId] = useState<string>('');
   const [jdUrl, setJdUrl] = useState('');
-
-  const stats = useMemo(() => {
-    if (!parseResult) return null;
-    return [
-      ['分块数量', String(parseResult.kbSize)],
-      ['风险术语', String((parseResult.risks || []).length)],
-      ['识别模块', String((parseResult.sections || []).length)],
-      ['向量层', parseResult.vectorProvider || vectorProvider]
-    ];
-  }, [parseResult, vectorProvider]);
+  const [generationAdjustment, setGenerationAdjustment] = useState('');
+  const [generationPreview, setGenerationPreview] = useState<ResumeGenerationPreview | null>(null);
 
   const agentCards = useMemo(() => {
     const map = new Map<string, unknown>();
@@ -185,6 +282,24 @@ export default function App() {
     loadJobMatches();
   }
 
+  async function generateResumePreview() {
+    const resumeId = parseResult?.resumeId || selectedSession?.resumeId || selectedResume?.id || null;
+    if (!resumeId) return;
+    setLoading('正在生成简历预览...');
+    const res = await fetch(`/api/resumes/${resumeId}/generation-preview`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        adjustment: generationAdjustment,
+        ...(selectedJobId ? { jobId: selectedJobId } : jdText.trim() ? { jdText } : {})
+      })
+    });
+    const data = await res.json();
+    setGenerationPreview(data);
+    setDisplayTab('generated');
+    setLoading(null);
+  }
+
   function pickJob(jobId: string) {
     setSelectedJobId(jobId);
     const job = jobs.find((j) => j.id === jobId);
@@ -216,29 +331,11 @@ export default function App() {
   async function loadQdrantReadiness() { const res = await fetch('/api/qdrant-readiness'); setQdrantReadiness(await res.json()); }
   async function loadLlmReadiness() { const res = await fetch('/api/llm-readiness'); setLlmReadiness(await res.json()); }
   async function loadLlmMetrics() { const res = await fetch('/api/llm-metrics'); setLlmMetrics(await res.json()); }
-  async function openResume(id: string) { const res = await fetch(`/api/resumes/${id}`); const data = await res.json(); setSelectedResume(data.resume || null); setResumeView('detail'); }
+  async function openResume(id: string) { const res = await fetch(`/api/resumes/${id}`); const data = await res.json(); setSelectedResume(data.resume || null); }
   async function handleCorrectionSaved(resume: Resume) {
     setSelectedResume(resume);
     await loadResumes();
     await loadDashboard();
-  }
-
-  function toggleCompare(id: string) {
-    setCompareIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-  }
-
-  async function compareResumes() {
-    if (compareIds.length < 2) return;
-    setLoading('正在对比简历...');
-    const res = await fetch('/api/resumes/compare', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids: compareIds, ...(selectedJobId ? { jobId: selectedJobId } : jdText.trim() ? { jdText } : {}) })
-    });
-    const data = await res.json();
-    setComparison(data.error ? null : data);
-    setResumeView('compare');
-    setLoading(null);
   }
 
   async function renameResume(id: string, current: string) {
@@ -252,7 +349,6 @@ export default function App() {
   async function deleteResume(id: string) {
     if (!window.confirm('确认删除这份简历？该操作不可撤销。')) return;
     await fetch(`/api/resumes/${id}`, { method: 'DELETE' });
-    setCompareIds((prev) => prev.filter((x) => x !== id));
     if (selectedResume?.id === id) setSelectedResume(null);
     await loadResumes();
     await loadDashboard();
@@ -276,14 +372,6 @@ export default function App() {
 
   return (
     <div className="page">
-      <header className="hero">
-        <div>
-          <p className="eyebrow">ResumePilot</p>
-          <h1>ResumePilot Web App</h1>
-        </div>
-        {stats && <div className="stats">{stats.map(([label, value]) => <div key={label} className="stat-card"><span>{label}</span><strong>{value}</strong></div>)}</div>}
-      </header>
-
       <section className="card intro-card">
         <div className="tab-row">{['workspace', 'resumes', 'runs', 'sessions', 'dashboard'].map((name) => <button key={name} className={tab === name ? 'tab active' : 'tab'} onClick={() => setTab(name as Tab)}>{name}</button>)}</div>
       </section>
@@ -294,7 +382,7 @@ export default function App() {
             <div className="panel-heading">
               <p className="eyebrow">Control</p>
               <h2>操作台</h2>
-              <p>从上到下完成导入、设定目标、输入回答和运行 workflow。</p>
+              <p>先导入简历并设定目标，再开始一轮模拟面试；有回答后继续追问。</p>
             </div>
 
             <div className="control-section">
@@ -309,58 +397,47 @@ export default function App() {
 
             <div className="control-section">
               <div className="step-label"><span>3</span><strong>回答当前问题</strong></div>
-              <textarea className="answer-input" value={answerDraft} onChange={(e) => setAnswerDraft(e.target.value)} placeholder="在这里输入你的回答，然后运行 Workflow 或继续 Session。" />
+              <textarea className="answer-input" value={answerDraft} onChange={(e) => setAnswerDraft(e.target.value)} placeholder="先点击“开始面试”生成问题；回答后点击“提交回答并继续追问”。" />
             </div>
 
             <div className="control-section">
               <div className="step-label"><span>4</span><strong>执行动作</strong></div>
               <div className="primary-actions">
-                <button onClick={runAgents}>运行 Workflow</button>
-                <button onClick={() => continueSession({ text: resumeText, answer: answerDraft })} disabled={!selectedSession}>继续 Session</button>
-                <button className="secondary-button" onClick={createSession}>新建 Session</button>
+                <button className="action-button primary-action" onClick={runAgents} disabled={!resumeText.trim()}>
+                  <strong>开始面试</strong>
+                  <span>根据简历和目标生成第一轮问题</span>
+                </button>
+                <button className="action-button primary-action" onClick={() => continueSession({ text: resumeText, answer: answerDraft })} disabled={!selectedSession || !answerDraft.trim()}>
+                  <strong>提交回答并继续追问</strong>
+                  <span>基于当前回答生成下一轮问题</span>
+                </button>
+                <button className="action-button secondary-button" onClick={createSession} disabled={!goal.trim()}>
+                  <strong>重开一场面试</strong>
+                  <span>清晰区分新的练习记录</span>
+                </button>
               </div>
             </div>
 
             <div className="session-card">
-              <span>当前 Session</span>
+              <span>当前面试会话</span>
               {selectedSession ? (
                 <>
                   <strong>{selectedSession.title}</strong>
-                  <p>{(selectedSession.turns || []).length} turns</p>
+                  <p>已进行 {(selectedSession.turns || []).length} 轮</p>
                 </>
               ) : (
-                <p>尚未选择 session。</p>
+                <p>还没有面试会话，点击“开始面试”或“重开一场面试”。</p>
               )}
             </div>
           </aside>
 
           <section className="display-panel">
-            <div className="display-header card">
-              <div>
-                <p className="eyebrow">Result</p>
-                <h2>展示界面</h2>
-                <p>右侧只看结果和过程，默认聚焦当前问题、批注和改写答案。</p>
-              </div>
-              <div className="status-strip">
-                {(stats || [
-                  ['简历状态', resumeText.trim() ? '已输入' : '待输入'],
-                  ['Workflow', executionPlan.length ? `${executionPlan.length} steps` : '待运行'],
-                  ['向量层', vectorProvider],
-                  ['Session', selectedSession ? `${(selectedSession.turns || []).length} turns` : '未选择']
-                ]).map(([label, value]) => (
-                  <div key={label} className="status-card">
-                    <span>{label}</span>
-                    <strong>{value}</strong>
-                  </div>
-                ))}
-              </div>
-            </div>
-
             <div className="card display-tabs-card">
               <div className="display-tabs">
                 {[
                   ['overview', '总览'],
                   ['resume', '简历解析'],
+                  ['generated', '生成简历'],
                   ['retrieval', '检索上下文'],
                   ['agents', 'Agent Trace'],
                   ['jd', 'JD 对比'],
@@ -405,7 +482,7 @@ export default function App() {
                               <h5>{section.title}</h5>
                               <div className="section-content">{buildSectionBlocks(section.content).map((block, idx) => <p className={`section-block ${block.kind}`} key={idx}>{block.text}</p>)}</div>
                             </div>
-                          )) : <p className="empty">未识别到结构化模块，请尝试重新上传或编辑解析结果。</p>}
+                          )) : <p className="empty">未识别到结构化模块，请重新上传更清晰的简历文件。</p>}
                         </div>
                       </div>
                     </div>
@@ -426,6 +503,55 @@ export default function App() {
                         <p>{item.content}</p>
                       </div>
                     )) : <p className="empty">运行 workflow 或继续 session 后，这里会展示 resume + session history 的联合检索结果。</p>}
+                  </div>
+                </div>
+              )}
+
+              {displayTab === 'generated' && (
+                <div className="display-section">
+                  <div className="generation-panel">
+                    <div className="generation-control">
+                      <div>
+                        <h4>简历生成预览</h4>
+                        <p className="muted">先生成预览，不覆盖原简历；调整要求会作为用户确认上下文参与事实校验。</p>
+                      </div>
+                      <button onClick={generateResumePreview} disabled={!(parseResult?.resumeId || selectedSession?.resumeId || selectedResume?.id)}>
+                        生成预览
+                      </button>
+                    </div>
+                    <textarea
+                      className="generation-adjustment"
+                      value={generationAdjustment}
+                      onChange={(e) => setGenerationAdjustment(e.target.value)}
+                      placeholder="输入调整要求，例如：目标岗位：高级前端工程师。突出 React、TypeScript、性能优化，不新增未确认指标。"
+                    />
+                    {generationPreview ? (
+                      <div className="generation-result">
+                        <div className="generation-status-row">
+                          <span className={generationPreview.ok ? 'chip ok' : 'chip danger'}>{generationPreview.ok ? '事实校验通过' : '预览被拦截'}</span>
+                          <span className="muted">Profile: {generationPreview.profile_validation?.ok ? 'ok' : 'needs review'} · Resume: {generationPreview.resume_validation?.ok ? 'ok' : 'needs review'}</span>
+                        </div>
+                        {generationPreview.resume ? (
+                          <GeneratedResumeCard resume={generationPreview.resume} />
+                        ) : null}
+                        {[
+                          ...(generationPreview.profile_validation?.issues || []),
+                          ...(generationPreview.resume_validation?.issues || [])
+                        ].length ? (
+                          <div className="validation-list">
+                            <h5>需要处理的事实问题</h5>
+                            {[...(generationPreview.profile_validation?.issues || []), ...(generationPreview.resume_validation?.issues || [])].map((issue, index) => (
+                              <div className="validation-item" key={index}>
+                                <strong>{issue.code} · {issue.path}</strong>
+                                <p>{issue.message}</p>
+                                {issue.value ? <p className="muted">{issue.value}</p> : null}
+                                {issue.unsupported_tokens?.length ? <p className="muted">未支持事实：{issue.unsupported_tokens.join('、')}</p> : null}
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : <p className="empty">点击“生成预览”后，这里会展示 JSON Resume 和事实校验结果。</p>}
                   </div>
                 </div>
               )}
@@ -555,19 +681,11 @@ export default function App() {
           <section className="card">
             <div className="resume-list-head">
               <h2>Resume 列表页</h2>
-              <div className="resume-list-actions">
-                <span className="resume-compare-count">已选 {compareIds.length} 份</span>
-                <button onClick={compareResumes} disabled={compareIds.length < 2}>对比所选简历</button>
-                {compareIds.length > 0 && <button className="secondary-button" onClick={() => setCompareIds([])}>清空</button>}
-              </div>
             </div>
             <div className="risk-list">
               {resumes.length ? resumes.map((resume) => (
-                <div className={compareIds.includes(resume.id) ? 'risk-item resume-item selected' : 'risk-item resume-item'} key={resume.id}>
-                  <label className="resume-check">
-                    <input type="checkbox" checked={compareIds.includes(resume.id)} onChange={() => toggleCompare(resume.id)} />
-                    <strong>{resume.title || resume.id}</strong>
-                  </label>
+                <div className="risk-item resume-item" key={resume.id}>
+                  <strong>{resume.title || resume.id}</strong>
                   <p>{resume.createdAt}</p>
                   <p>{(resume.text || '').slice(0, 120)}...</p>
                   <div className="resume-item-actions">
@@ -580,13 +698,7 @@ export default function App() {
             </div>
           </section>
           <section className="card tall">
-            <div className="tab-row resume-view-tabs">
-              <button className={resumeView === 'detail' ? 'tab active' : 'tab'} onClick={() => setResumeView('detail')}>简历详情</button>
-              <button className={resumeView === 'compare' ? 'tab active' : 'tab'} onClick={() => setResumeView('compare')}>简历对比</button>
-            </div>
-            {resumeView === 'compare'
-              ? <ResumeComparePanel comparison={comparison} />
-              : <ResumeDetailPanel resume={selectedResume} onCorrectionSaved={handleCorrectionSaved} />}
+            <ResumeDetailPanel resume={selectedResume} onCorrectionSaved={handleCorrectionSaved} />
           </section>
         </main>
       )}

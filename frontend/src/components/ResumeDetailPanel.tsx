@@ -76,7 +76,7 @@ export default function ResumeDetailPanel({ resume, onCorrectionSaved }: { resum
           </div>
         ) : <p className="empty">暂无风险术语。</p>}
       </div>
-      <div className="detail-block">
+      <div className="detail-block scroll-block">
         <h4>Sections</h4>
         <div className="section-list compact">
           {(resume.sections || []).map((section: Section) => (

@@ -16,7 +16,8 @@ description: "Use when the platform needs to generate an ATS-friendly resume.jso
 3. Validate that every CareerProfile field either comes from the uploaded resume or has explicit confirmation evidence.
 4. Convert CareerProfile to JSON Resume with `career_profile_to_json_resume`.
 5. Validate the generated JSON Resume again before writing `resume.json`.
-6. Return the generated artifact and a validation report with unsupported facts blocked.
+6. If a target job description is available, run the adapted job-application-optimizer stage.
+7. Return the generated artifact, validation report, and internal optimization report with unsupported facts blocked.
 
 ## Output principles
 - ATS compatibility first: single-column friendly data, standard section names, no visual-only content.
@@ -24,9 +25,11 @@ description: "Use when the platform needs to generate an ATS-friendly resume.jso
 - Do not invent metrics, seniority, employers, education, certifications, awards, or dates.
 - Conversation context is usable only when the user explicitly confirmed it.
 - If validation fails, block output and return unsupported facts instead of producing a polished but unsafe resume.
+- Job optimization suggestions are recommendations only; every suggested resume change must be confirmed by the user before entering CareerProfile.
 
 ## Core files
 - `src/resume_generation_skill/career_profile.py` - lightweight CareerProfile data helpers.
 - `src/resume_generation_skill/json_resume.py` - independent CareerProfile to JSON Resume conversion.
 - `src/resume_generation_skill/fact_validator.py` - evidence-backed fact validation.
+- `src/resume_generation_skill/job_optimizer.py` - JD keyword, match, ATS, and tailoring recommendation logic adapted from job-application-optimizer.
 - `src/resume_generation_skill/generator.py` - orchestration shell for platform integration.

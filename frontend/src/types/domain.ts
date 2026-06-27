@@ -111,6 +111,7 @@ export interface ResumeGenerationPreview {
   adjustment?: string;
   resume?: Record<string, unknown>;
   careerProfile?: Record<string, unknown>;
+  optimization?: Record<string, unknown>;
   profile_validation?: ResumeGenerationValidation;
   resume_validation?: ResumeGenerationValidation;
   error?: string;

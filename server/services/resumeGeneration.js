@@ -30,6 +30,53 @@ function splitMetaLine(line = '') {
   return { email, phone };
 }
 
+function dateRangeOf(line = '') {
+  const text = normalizeLine(line);
+  const match = text.match(/((?:19|20)\d{2}[./-]\d{1,2})(?:\s*(?:-|至|~|—|–)\s*((?:19|20)\d{2}[./-]\d{1,2}|至今|现在))?/);
+  return match ? { startDate: match[1] || '', endDate: match[2] || '', raw: match[0] } : null;
+}
+
+function looksLikeExperienceHeading(line = '') {
+  const text = normalizeLine(line);
+  return Boolean(dateRangeOf(text)) && /公司|大学|学院|实验室|团队|部门|中心|工作室|项目|实习|工程师|开发|负责人/.test(text);
+}
+
+function splitTitledEntries(lines = []) {
+  const entries = [];
+  let current = null;
+  for (const rawLine of lines) {
+    const line = normalizeLine(rawLine);
+    if (!line) continue;
+    if (!current || looksLikeExperienceHeading(line)) {
+      current = { title: line, lines: [] };
+      entries.push(current);
+    } else {
+      current.lines.push(line);
+    }
+  }
+  return entries;
+}
+
+function parseRoleAndOrg(title = '') {
+  const date = dateRangeOf(title);
+  const withoutDate = normalizeLine(date ? title.replace(date.raw, '') : title);
+  const roleOrg = withoutDate.match(/^(.{2,18}(?:实习生|工程师|开发|设计|运营|负责人|成员|经理|专员|助理|研究员|顾问))(.{2,})$/);
+  if (roleOrg) {
+    return {
+      position: normalizeLine(roleOrg[1]),
+      name: normalizeLine(roleOrg[2]),
+      startDate: date?.startDate || '',
+      endDate: date?.endDate || ''
+    };
+  }
+  return {
+    position: '',
+    name: withoutDate,
+    startDate: date?.startDate || '',
+    endDate: date?.endDate || ''
+  };
+}
+
 function buildBasics(resume, sections, adjustment) {
   const basicSection = findSection(sections, ['基本', '个人', '联系', 'contact', 'profile']) || sections[0] || null;
   const lines = basicSection?.content || [];
@@ -62,29 +109,33 @@ function buildSkills(sections = []) {
 
 function buildWork(sections = []) {
   const workSections = sections.filter((section) => includesAny(section.title || '', ['工作', '实习', 'experience']));
-  return workSections.map((section) => {
-    const lines = section.content || [];
+  return workSections.flatMap((section) => splitTitledEntries(section.content || []).map((entry) => {
+    const parsed = parseRoleAndOrg(entry.title);
     return {
-      name: normalizeLine(lines[0] || section.title),
-      position: section.title,
-      summary: normalizeLine(lines[1] || ''),
-      highlights: lines.slice(1).map((line) => ({ text: normalizeLine(line), source_ids: ['resume-original'] })).filter((item) => item.text),
+      name: parsed.name || normalizeLine(section.title),
+      position: parsed.position || section.title,
+      startDate: parsed.startDate,
+      endDate: parsed.endDate,
+      summary: normalizeLine(entry.lines[0] || ''),
+      highlights: entry.lines.map((line) => ({ text: normalizeLine(line), source_ids: ['resume-original'] })).filter((item) => item.text),
       source_ids: ['resume-original']
     };
-  });
+  }));
 }
 
 function buildProjects(sections = []) {
   const projectSections = sections.filter((section) => includesAny(section.title || '', ['项目', 'projects']));
-  return projectSections.map((section) => {
-    const lines = section.content || [];
+  return projectSections.flatMap((section) => splitTitledEntries(section.content || []).map((entry) => {
+    const parsed = parseRoleAndOrg(entry.title);
     return {
-      name: normalizeLine(lines[0] || section.title),
-      description: normalizeLine(lines[1] || section.title),
-      highlights: lines.slice(1).map((line) => ({ text: normalizeLine(line), source_ids: ['resume-original'] })).filter((item) => item.text),
+      name: parsed.name || normalizeLine(entry.title || section.title),
+      startDate: parsed.startDate,
+      endDate: parsed.endDate,
+      description: normalizeLine(entry.lines[0] || ''),
+      highlights: entry.lines.map((line) => ({ text: normalizeLine(line), source_ids: ['resume-original'] })).filter((item) => item.text),
       source_ids: ['resume-original']
     };
-  });
+  }));
 }
 
 function buildEducation(sections = []) {
@@ -133,9 +184,9 @@ export function buildCareerProfileFromResume({ resume, adjustment = '' }) {
   };
 }
 
-export async function generateResumePreview({ resume, adjustment = '' }) {
+export async function generateResumePreview({ resume, adjustment = '', jobDescription = '' }) {
   const careerProfile = buildCareerProfileFromResume({ resume, adjustment });
-  const payload = JSON.stringify({ careerProfile });
+  const payload = JSON.stringify({ careerProfile, jobDescription });
 
   return await new Promise((resolve, reject) => {
     const child = spawn('python3', ['-m', 'resume_generation_skill.cli'], {
