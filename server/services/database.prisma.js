@@ -68,6 +68,28 @@ export async function getResume(id) {
   return mapResume(await client.resume.findUnique({ where: { id } }));
 }
 
+export async function updateResume(id, patch = {}) {
+  const client = await getPrisma();
+  const data = {};
+  if (typeof patch.title === 'string') data.title = patch.title;
+  if (!Object.keys(data).length) return await getResume(id);
+  return mapResume(await client.resume.update({ where: { id }, data }));
+}
+
+export async function deleteResume(id) {
+  const client = await getPrisma();
+  try {
+    await client.$transaction([
+      client.run.updateMany({ where: { resumeId: id }, data: { resumeId: null } }),
+      client.memoryItem.updateMany({ where: { resumeId: id }, data: { resumeId: null } }),
+      client.resume.delete({ where: { id } })
+    ]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function saveRunRecord(record) {
   const client = await getPrisma();
   return await client.run.create({

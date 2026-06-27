@@ -51,6 +51,25 @@ export async function getResume(id) {
   return db.resumes.find((item) => item.id === id) || null;
 }
 
+export async function updateResume(id, patch = {}) {
+  const db = await readDb();
+  const resume = db.resumes.find((item) => item.id === id);
+  if (!resume) return null;
+  if (typeof patch.title === 'string') resume.title = patch.title;
+  resume.updatedAt = new Date().toISOString();
+  await writeDb(db);
+  return resume;
+}
+
+export async function deleteResume(id) {
+  const db = await readDb();
+  const before = db.resumes.length;
+  db.resumes = db.resumes.filter((item) => item.id !== id);
+  const removed = db.resumes.length < before;
+  if (removed) await writeDb(db);
+  return removed;
+}
+
 export async function saveRunRecord(record) {
   const db = await readDb();
   db.runs.push({ id: record.id || nowId('run'), createdAt: new Date().toISOString(), ...record });

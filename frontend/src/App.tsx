@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import ResumeDetailPanel from './components/ResumeDetailPanel';
+import ResumeComparePanel from './components/ResumeComparePanel';
 import RunDetailPanel from './components/RunDetailPanel';
 import SessionDetailPanel from './components/SessionDetailPanel';
 import type {
@@ -13,6 +14,7 @@ import type {
   LlmReadiness,
   ParseResult,
   QdrantReadiness,
+  ResumeComparison,
   RetrievedChunk,
   Resume,
   Run,
@@ -34,6 +36,9 @@ export default function App() {
   const [runs, setRuns] = useState<Run[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [selectedResume, setSelectedResume] = useState<Resume | null>(null);
+  const [compareIds, setCompareIds] = useState<string[]>([]);
+  const [comparison, setComparison] = useState<ResumeComparison | null>(null);
+  const [resumeView, setResumeView] = useState<'detail' | 'compare'>('detail');
   const [selectedRun, setSelectedRun] = useState<Run | null>(null);
   const [selectedSession, setSelectedSession] = useState<Session | null>(null);
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
@@ -186,7 +191,42 @@ export default function App() {
   async function loadQdrantReadiness() { const res = await fetch('/api/qdrant-readiness'); setQdrantReadiness(await res.json()); }
   async function loadLlmReadiness() { const res = await fetch('/api/llm-readiness'); setLlmReadiness(await res.json()); }
   async function loadLlmMetrics() { const res = await fetch('/api/llm-metrics'); setLlmMetrics(await res.json()); }
-  async function openResume(id: string) { const res = await fetch(`/api/resumes/${id}`); const data = await res.json(); setSelectedResume(data.resume || null); }
+  async function openResume(id: string) { const res = await fetch(`/api/resumes/${id}`); const data = await res.json(); setSelectedResume(data.resume || null); setResumeView('detail'); }
+
+  function toggleCompare(id: string) {
+    setCompareIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
+
+  async function compareResumes() {
+    if (compareIds.length < 2) return;
+    setLoading('正在对比简历...');
+    const res = await fetch('/api/resumes/compare', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: compareIds, ...(selectedJobId ? { jobId: selectedJobId } : jdText.trim() ? { jdText } : {}) })
+    });
+    const data = await res.json();
+    setComparison(data.error ? null : data);
+    setResumeView('compare');
+    setLoading(null);
+  }
+
+  async function renameResume(id: string, current: string) {
+    const title = window.prompt('输入简历的新名称：', current);
+    if (title === null) return;
+    await fetch(`/api/resumes/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title }) });
+    await loadResumes();
+    if (selectedResume?.id === id) openResume(id);
+  }
+
+  async function deleteResume(id: string) {
+    if (!window.confirm('确认删除这份简历？该操作不可撤销。')) return;
+    await fetch(`/api/resumes/${id}`, { method: 'DELETE' });
+    setCompareIds((prev) => prev.filter((x) => x !== id));
+    if (selectedResume?.id === id) setSelectedResume(null);
+    await loadResumes();
+    await loadDashboard();
+  }
   async function openRun(id: string) { const res = await fetch(`/api/runs/${id}`); const data = await res.json(); setSelectedRun(data.run || null); }
   async function openSession(id: string) { const res = await fetch(`/api/sessions/${id}`); const data = await res.json(); setSelectedSession(data.session || null); }
 
@@ -478,8 +518,42 @@ export default function App() {
 
       {tab === 'resumes' && (
         <main className="grid grid-wide detail-layout">
-          <section className="card"><h2>Resume 列表页</h2><div className="risk-list">{resumes.length ? resumes.map((resume) => <div className="risk-item" key={resume.id}><strong>{resume.id}</strong><p>{resume.createdAt}</p><p>{(resume.text || '').slice(0, 120)}...</p><button onClick={() => openResume(resume.id)}>查看详情</button></div>) : <p className="empty">还没有简历记录。</p>}</div></section>
-          <section className="card tall"><ResumeDetailPanel resume={selectedResume} /></section>
+          <section className="card">
+            <div className="resume-list-head">
+              <h2>Resume 列表页</h2>
+              <div className="resume-list-actions">
+                <span className="resume-compare-count">已选 {compareIds.length} 份</span>
+                <button onClick={compareResumes} disabled={compareIds.length < 2}>对比所选简历</button>
+                {compareIds.length > 0 && <button className="secondary-button" onClick={() => setCompareIds([])}>清空</button>}
+              </div>
+            </div>
+            <div className="risk-list">
+              {resumes.length ? resumes.map((resume) => (
+                <div className={compareIds.includes(resume.id) ? 'risk-item resume-item selected' : 'risk-item resume-item'} key={resume.id}>
+                  <label className="resume-check">
+                    <input type="checkbox" checked={compareIds.includes(resume.id)} onChange={() => toggleCompare(resume.id)} />
+                    <strong>{resume.title || resume.id}</strong>
+                  </label>
+                  <p>{resume.createdAt}</p>
+                  <p>{(resume.text || '').slice(0, 120)}...</p>
+                  <div className="resume-item-actions">
+                    <button onClick={() => openResume(resume.id)}>查看详情</button>
+                    <button className="secondary-button" onClick={() => renameResume(resume.id, resume.title || resume.id)}>重命名</button>
+                    <button className="danger-button" onClick={() => deleteResume(resume.id)}>删除</button>
+                  </div>
+                </div>
+              )) : <p className="empty">还没有简历记录。</p>}
+            </div>
+          </section>
+          <section className="card tall">
+            <div className="tab-row resume-view-tabs">
+              <button className={resumeView === 'detail' ? 'tab active' : 'tab'} onClick={() => setResumeView('detail')}>简历详情</button>
+              <button className={resumeView === 'compare' ? 'tab active' : 'tab'} onClick={() => setResumeView('compare')}>简历对比</button>
+            </div>
+            {resumeView === 'compare'
+              ? <ResumeComparePanel comparison={comparison} />
+              : <ResumeDetailPanel resume={selectedResume} />}
+          </section>
         </main>
       )}
 

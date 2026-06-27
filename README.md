@@ -15,6 +15,8 @@
 - SQLite + Prisma 持久化，历史运行 / 会话可回看
 - 岗位 JD 对比并落库，匹配历史可回看
 - 岗位-简历差距报告：差距总结 + 命中/缺失关键词，可从已抓取岗位库直接选岗对比
+- 多份简历并行管理与对比：多选 / 重命名 / 删除，并排对比基础指标、关键词差异、风险术语与岗位匹配分
+- 模拟面试连续追问：背景澄清 → 方案细节 → 验证与结果 → 反思与拓展四段递进，引用上一轮回答去重深挖
 - 招聘岗位抓取：Greenhouse / Lever 公开 ATS 适配器 + 定时调度器（去重入库）
 - LLM 调用 trace（mode / 延迟 / token / model）在 Run 详情面板可见
 
@@ -42,13 +44,12 @@ npm run dev
 npm test
 ```
 
-覆盖：简历解析、jdMatcher、llmClient、skill workflow、JSON 数据层（含 Session.resumeId 持久化、JobDescription dedupe、JobMatch）、jobSources 适配器层（含关键词/地域过滤）与调度器去重、LLM 成本与延迟聚合。
+覆盖：简历解析、jdMatcher、resumeComparer（多简历指标/关键词差异）、interviewer（连续追问深度递进）、llmClient、skill workflow、JSON 数据层（含 Session.resumeId 持久化、resume 重命名/删除、JobDescription dedupe、JobMatch）、jobSources 适配器层（含关键词/地域过滤）与调度器去重、LLM 成本与延迟聚合。
 
 ## 下一步可做的方向
 
-- 支持多份简历并行管理与对比
-- 个性化投递建议与岗位-简历差距报告
-- 模拟面试连续追问体验打磨
+- 面试评分体系与可量化反馈报告
+- 简历改写版本对比与一键导出
 - 岗位抓取扩展更多数据源（LinkedIn / 自建爬虫）
 - 登录、作品集、分享链接；语音面试模式
 

@@ -37,6 +37,18 @@ test('json session persists resumeId and backfills when missing', async () => {
   assert.equal(backfilled.resumeId, 'resume_late', 'missing resumeId should be backfilled');
 });
 
+test('json resume update renames and delete removes the record', async () => {
+  const resume = await db.saveResumeRecord({ text: '可删除简历', sections: [], risks: [], kbSize: 0 });
+  const renamed = await db.updateResume(resume.id, { title: '新名字' });
+  assert.equal(renamed.title, '新名字');
+  assert.equal((await db.getResume(resume.id)).title, '新名字');
+
+  const removed = await db.deleteResume(resume.id);
+  assert.equal(removed, true);
+  assert.equal(await db.getResume(resume.id), null);
+  assert.equal(await db.deleteResume('does-not-exist'), false);
+});
+
 test('json job descriptions upsert by dedupeKey and store matches', async () => {
   const first = await db.saveJobDescription({ title: 'Backend', company: 'Acme', source: 'greenhouse', sourceUrl: 'https://x/1', text: 'Go + gRPC', dedupeKey: 'dk-1' });
   assert.ok(first.id.startsWith('job'));

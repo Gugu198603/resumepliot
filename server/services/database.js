@@ -44,6 +44,16 @@ export async function getResume(id) {
   return await provider.getResume(id);
 }
 
+export async function updateResume(id, patch) {
+  const provider = await getProvider();
+  return await provider.updateResume(id, patch);
+}
+
+export async function deleteResume(id) {
+  const provider = await getProvider();
+  return await provider.deleteResume(id);
+}
+
 export async function saveRunRecord(record) {
   const provider = await getProvider();
   return await provider.saveRunRecord(record);

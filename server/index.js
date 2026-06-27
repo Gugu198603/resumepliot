@@ -5,12 +5,12 @@ import multer from 'multer';
 import pdfParse from 'pdf-parse';
 import { normalizeText, splitSections, detectRisks, rewriteResume } from './services/resumeParser.js';
 import { buildKnowledgeBase, provider as vectorProvider } from './services/vectorStore.js';
-import { planNextStep } from './agents/planner.js';
 import { retrieveContext } from './agents/retriever.js';
 import { generateInterviewQuestions } from './agents/interviewer.js';
 import { critiqueAnswer } from './agents/critic.js';
 import { rewriteArtifacts } from './agents/writer.js';
 import { matchJobDescription } from './agents/jdMatcher.js';
+import { buildResumeComparison } from './agents/resumeComparer.js';
 import { routeSkill } from './router/skillRouter.js';
 import { handleMcpRequest } from './mcp/runtime.js';
 import { listTools } from './mcp/server.js';
@@ -22,6 +22,8 @@ import {
   getDatabaseOverview,
   listResumes,
   getResume,
+  updateResume,
+  deleteResume,
   getRun,
   createSession,
   findOrCreateSessionByGoal,
@@ -38,6 +40,7 @@ import {
 import { getAppRoadmap } from './services/appPlanner.js';
 import { getLLMConfig } from './services/llmClient.js';
 import { computeLlmMetrics } from './services/llmMetrics.js';
+import { runAgentWorkflow } from './services/agentRuntime.js';
 import { listSources, fetchFromSource } from './services/jobSources/index.js';
 import { startScheduler, getSchedulerStatus, runOnce } from './services/jobScheduler.js';
 
@@ -186,25 +189,72 @@ app.get('/api/llm-readiness', (_, res) => {
 });
 app.get('/api/runs/:id', async (req, res) => { const run = await getRun(req.params.id); if (!run) return res.status(404).json({ error: 'Run not found' }); res.json({ run }); });
 app.get('/api/resumes', async (_, res) => { res.json({ resumes: await listResumes() }); });
+app.post('/api/resumes/compare', async (req, res) => {
+  try {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter(Boolean) : [];
+    const jdText = req.body?.jdText || '';
+    const jobId = req.body?.jobId || null;
+    if (ids.length < 2) return res.status(400).json({ error: 'At least two resume ids are required.' });
+    const resumes = (await Promise.all(ids.map((id) => getResume(id)))).filter(Boolean);
+    if (resumes.length < 2) return res.status(404).json({ error: 'Could not load at least two resumes.' });
+
+    const comparison = buildResumeComparison(resumes);
+
+    let jdContent = jdText;
+    let job = null;
+    if (jobId) {
+      job = await getJobDescription(jobId);
+      if (job) jdContent = job.text || '';
+    }
+    let jobMatchScores = null;
+    if (jdContent.trim()) {
+      jobMatchScores = await Promise.all(resumes.map(async (resume) => {
+        const result = await matchJobDescription({ resumeText: resume.text || '', resumeChunks: resume.chunks || [], jdText: jdContent });
+        return { id: resume.id, matchScore: result.matchScore, mode: result.mode };
+      }));
+    }
+    res.json({ ...comparison, jobMatchScores, jobId: job?.id || null });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 app.get('/api/resumes/:id', async (req, res) => { const resume = await getResume(req.params.id); if (!resume) return res.status(404).json({ error: 'Resume not found' }); res.json({ resume }); });
+app.patch('/api/resumes/:id', async (req, res) => {
+  const resume = await updateResume(req.params.id, { title: req.body?.title });
+  if (!resume) return res.status(404).json({ error: 'Resume not found' });
+  res.json({ resume });
+});
+app.delete('/api/resumes/:id', async (req, res) => {
+  const removed = await deleteResume(req.params.id);
+  if (!removed) return res.status(404).json({ error: 'Resume not found' });
+  res.json({ ok: true, id: req.params.id });
+});
 app.get('/api/sessions', async (_, res) => { res.json({ sessions: await listSessions() }); });
 app.get('/api/sessions/:id', async (req, res) => { const session = await getSession(req.params.id); if (!session) return res.status(404).json({ error: 'Session not found' }); res.json({ session }); });
 app.post('/api/sessions', async (req, res) => { const title = req.body?.title || 'New Session'; const goal = req.body?.goal || title; const session = await createSession({ title, goal, resumeId: req.body?.resumeId || null }); res.json({ session }); });
 
 app.post('/api/sessions/:id/continue', async (req, res) => {
-  const session = await getSession(req.params.id);
-  if (!session) return res.status(404).json({ error: 'Session not found' });
-  const { text = '', answer = '', resumeId = session.resumeId || null } = req.body || {};
-  const lastTurn = session.turns?.[session.turns.length - 1] || null;
-  const retrieval = await retrieveContext({ text, query: session.goal || session.title || '', topK: 3, sessionTurns: session.turns || [], resumeId });
-  const retrieved = retrieval.retrieved;
-  const { questions } = await generateInterviewQuestions({ goal: session.goal || session.title || '', retrieved, previousAnswer: answer, previousQuestion: lastTurn?.question || '' });
-  const question = questions?.detail?.[0] || questions?.basic?.[0] || '请继续介绍你的经历。';
-  const critique = await critiqueAnswer({ answer, retrieved, question });
-  const rewrite = await rewriteArtifacts({ text, answer, feedback: critique?.feedback || [] });
-  const turn = { id: makeId('turn'), question, answer, critique: critique?.feedback || [], improvedAnswer: rewrite?.improvedAnswer || '', retrieved, resumeId };
-  const updatedSession = await appendSessionTurn(session.id, turn);
-  res.json({ session: updatedSession, turn, critique, rewrite, questions, retrieved, retrievalMeta: { resumeResults: retrieval.resumeResults, historyResults: retrieval.historyResults, kbSource: retrieval.kbSource, resumeId: retrieval.resumeId } });
+  try {
+    const session = await getSession(req.params.id);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+    const { text = '', answer = '', resumeId = session.resumeId || null } = req.body || {};
+    const turns = session.turns || [];
+    const lastTurn = turns[turns.length - 1] || null;
+    const depth = turns.length;
+    const askedQuestions = turns.map((t) => t.question).filter(Boolean);
+    const retrieval = await retrieveContext({ text, query: session.goal || session.title || '', topK: 3, sessionTurns: turns, resumeId });
+    const retrieved = retrieval.retrieved;
+    const interview = await generateInterviewQuestions({ goal: session.goal || session.title || '', retrieved, previousAnswer: answer, previousQuestion: lastTurn?.question || '', depth, askedQuestions });
+    const questions = interview.questions;
+    const question = questions?.detail?.[0] || questions?.basic?.[0] || '请继续介绍你的经历。';
+    const critique = await critiqueAnswer({ answer, retrieved, question });
+    const rewrite = await rewriteArtifacts({ text, answer, feedback: critique?.feedback || [] });
+    const turn = { id: makeId('turn'), question, answer, critique: critique?.feedback || [], improvedAnswer: rewrite?.improvedAnswer || '', retrieved, resumeId, depth, stage: interview.stage };
+    const updatedSession = await appendSessionTurn(session.id, turn);
+    res.json({ session: updatedSession, turn, critique, rewrite, questions, depth, stage: interview.stage, retrieved, retrievalMeta: { resumeResults: retrieval.resumeResults, historyResults: retrieval.historyResults, kbSource: retrieval.kbSource, resumeId: retrieval.resumeId } });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 app.post('/api/skill-route', async (req, res) => {
@@ -249,51 +299,28 @@ app.post('/api/agent-run', async (req, res) => {
     const persistedResume = resumeId ? await getResume(resumeId) : null;
     const sourceText = persistedResume?.text || text || '';
     const sections = persistedResume?.sections || splitSections(sourceText);
+    const risks = persistedResume?.risks || detectRisks(sourceText);
     const skill = await routeSkill({ goal: goal || '' });
     const executionPlan = resolveExecutionPlan({ content: skill.rawContent || '' });
-    const agentOutputs = [];
-    const llmTrace = [];
-    let parseOutput = null;
-    let plan = null;
-    let retrieved = [];
-    let questions = null;
-    let critique = null;
-    let rewrite = null;
-    let retrievalMeta = null;
     let sessionTurns = [];
     if (sessionId) {
       const session = await getSession(sessionId);
       sessionTurns = session?.turns || [];
     }
-    for (const step of executionPlan) {
-      if (step.agent === 'parser') {
-        parseOutput = { sections, risks: persistedResume?.risks || detectRisks(sourceText) };
-        agentOutputs.push({ step, output: parseOutput });
-      } else if (step.agent === 'planner') {
-        plan = await planNextStep({ goal, history, sections });
-        if (plan.llm) llmTrace.push({ agent: 'planner', ...plan.llm });
-        agentOutputs.push({ step, output: plan });
-      } else if (step.agent === 'retriever') {
-        const result = await retrieveContext({ text: sourceText, query: goal, topK: 3, sessionTurns, resumeId: persistedResume?.id || resumeId });
-        retrieved = result.retrieved;
-        retrievalMeta = { resumeResults: result.resumeResults, historyResults: result.historyResults, kbSource: result.kbSource, resumeId: result.resumeId };
-        agentOutputs.push({ step, output: { retrieved, retrievalMeta } });
-      } else if (step.agent === 'interviewer') {
-        const result = await generateInterviewQuestions({ goal, retrieved, previousAnswer: answer });
-        questions = result.questions;
-        if (result.llm) llmTrace.push({ agent: 'interviewer', ...result.llm });
-        agentOutputs.push({ step, output: result });
-      } else if (step.agent === 'critic' && answer) {
-        critique = await critiqueAnswer({ answer, retrieved, question: questions?.detail?.[0] || questions?.basic?.[0] || '' });
-        if (critique.llm) llmTrace.push({ agent: 'critic', ...critique.llm });
-        agentOutputs.push({ step, output: critique });
-      } else if (step.agent === 'writer' && answer) {
-        rewrite = await rewriteArtifacts({ text: sourceText, answer, feedback: critique?.feedback || [] });
-        if (rewrite.llm) llmTrace.push({ agent: 'writer', ...rewrite.llm });
-        agentOutputs.push({ step, output: rewrite });
-      }
-    }
-    const llmSummary = summarizeLlmTrace(llmTrace);
+    const runtime = await runAgentWorkflow({
+      goal,
+      answer,
+      history,
+      sourceText,
+      sections,
+      risks,
+      executionPlan,
+      sessionTurns,
+      sessionId,
+      resumeId: persistedResume?.id || resumeId || null,
+      vectorProvider
+    });
+    const { agentOutputs, llmTrace, llmSummary, parseOutput, plan, retrieved, questions, critique, rewrite, retrievalMeta, memoryContext, memoryWrite, runtimeRunId } = runtime;
     const record = await saveRunRecord({ goal, hasAnswer: Boolean(answer), resumeId: persistedResume?.id || resumeId || null, skill: skill.selectedSkill, executionPlan, vectorProvider, agentOutputs, retrievalMeta, llmTrace, llmSummary });
     let session = null;
     if (sessionId || goal) {
@@ -303,7 +330,7 @@ app.post('/api/agent-run', async (req, res) => {
         session = await appendSessionTurn(session.id, turn, record.id);
       }
     }
-    res.json({ runId: record.id, sessionId: session?.id || null, resumeId: persistedResume?.id || resumeId || null, skill, executionPlan, agentOutputs, plan, parseOutput, retrieved, questions, critique, rewrite, retrievalMeta, vectorProvider, llmTrace, llmSummary });
+    res.json({ runId: record.id, runtimeRunId, sessionId: session?.id || null, resumeId: persistedResume?.id || resumeId || null, skill, executionPlan, agentOutputs, plan, parseOutput, retrieved, questions, critique, rewrite, retrievalMeta, memoryContext, memoryWrite, vectorProvider, llmTrace, llmSummary });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

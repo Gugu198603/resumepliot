@@ -114,6 +114,8 @@ export interface Turn {
   retrieved?: RetrievedChunk[];
   runId?: string;
   resumeId?: string | null;
+  depth?: number;
+  stage?: string;
   createdAt?: string;
 }
 
@@ -253,4 +255,33 @@ export interface LlmMetrics {
   byModel: (LlmMetricBucket & { model: string })[];
   byAgent: (LlmMetricBucket & { agent: string })[];
   pricing: { source: 'env' | 'default'; unit: string; table: Record<string, { prompt: number; completion: number }> };
+}
+
+export interface ResumeCompareMetrics {
+  sections: number;
+  risks: number;
+  kbSize: number;
+  chars: number;
+}
+
+export interface ResumeCompareItem {
+  id: string;
+  title: string;
+  createdAt: string | null;
+  metrics: ResumeCompareMetrics;
+  uniqueKeywords: string[];
+  riskTerms: string[];
+}
+
+export interface ResumeJobMatchScore {
+  id: string;
+  matchScore: number;
+  mode: LlmMode;
+}
+
+export interface ResumeComparison {
+  items: ResumeCompareItem[];
+  commonKeywords: string[];
+  jobMatchScores?: ResumeJobMatchScore[] | null;
+  jobId?: string | null;
 }

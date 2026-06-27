@@ -9,6 +9,7 @@ export default function ConversationTimeline({ turns }: { turns: Turn[] }) {
         <div key={idx} className="timeline-item">
           <div className="timeline-node">{idx + 1}</div>
           <div className="timeline-content">
+            {turn.stage ? <span className="timeline-stage">第 {(turn.depth ?? idx) + 1} 轮 · {turn.stage}</span> : null}
             <div className="message interviewer"><strong>Question</strong><p>{turn.question || '-'}</p></div>
             <div className="message user"><strong>Answer</strong><p>{turn.answer || '-'}</p></div>
             <div className="message critic"><strong>Critique</strong><p>{Array.isArray(turn.critique) ? turn.critique.join('；') : (turn.critique || '-')}</p></div>
