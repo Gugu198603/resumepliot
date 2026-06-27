@@ -40,7 +40,7 @@ import {
 import { getAppRoadmap } from './services/appPlanner.js';
 import { getLLMConfig } from './services/llmClient.js';
 import { computeLlmMetrics } from './services/llmMetrics.js';
-import { runAgentWorkflow } from './services/agentRuntime.js';
+import { loadRuntimeMemory, runAgentWorkflow } from './services/agentRuntime.js';
 import { DEFAULT_GOLDEN_QUERIES, evaluateRag } from './services/ragEvaluation.js';
 import { listSources, fetchFromSource } from './services/jobSources/index.js';
 import { startScheduler, getSchedulerStatus, runOnce } from './services/jobScheduler.js';
@@ -256,16 +256,17 @@ app.post('/api/sessions/:id/continue', async (req, res) => {
     const lastTurn = turns[turns.length - 1] || null;
     const depth = turns.length;
     const askedQuestions = turns.map((t) => t.question).filter(Boolean);
+    const memoryContext = await loadRuntimeMemory({ goal: session.goal || session.title || '', resumeId, sessionId: session.id });
     const retrieval = await retrieveContext({ text, query: session.goal || session.title || '', topK: 3, sessionTurns: turns, resumeId });
     const retrieved = retrieval.retrieved;
-    const interview = await generateInterviewQuestions({ goal: session.goal || session.title || '', retrieved, previousAnswer: answer, previousQuestion: lastTurn?.question || '', depth, askedQuestions });
+    const interview = await generateInterviewQuestions({ goal: session.goal || session.title || '', retrieved, previousAnswer: answer, previousQuestion: lastTurn?.question || '', depth, askedQuestions, memoryContext });
     const questions = interview.questions;
     const question = questions?.detail?.[0] || questions?.basic?.[0] || '请继续介绍你的经历。';
-    const critique = await critiqueAnswer({ answer, retrieved, question });
-    const rewrite = await rewriteArtifacts({ text, answer, feedback: critique?.feedback || [] });
+    const critique = await critiqueAnswer({ answer, retrieved, question, memoryContext });
+    const rewrite = await rewriteArtifacts({ text, answer, feedback: critique?.feedback || [], memoryContext });
     const turn = { id: makeId('turn'), question, answer, critique: critique?.feedback || [], improvedAnswer: rewrite?.improvedAnswer || '', retrieved, resumeId, depth, stage: interview.stage };
     const updatedSession = await appendSessionTurn(session.id, turn);
-    res.json({ session: updatedSession, turn, critique, rewrite, questions, depth, stage: interview.stage, retrieved, retrievalMeta: { resumeResults: retrieval.resumeResults, historyResults: retrieval.historyResults, kbSource: retrieval.kbSource, resumeId: retrieval.resumeId } });
+    res.json({ session: updatedSession, turn, critique, rewrite, questions, depth, stage: interview.stage, retrieved, memoryContext, retrievalMeta: { resumeResults: retrieval.resumeResults, historyResults: retrieval.historyResults, kbSource: retrieval.kbSource, resumeId: retrieval.resumeId } });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

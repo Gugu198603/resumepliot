@@ -1,7 +1,8 @@
 import { loadPrompt } from '../services/promptLoader.js';
 import { callLLMJson } from '../services/llmClient.js';
+import { formatMemoryContext } from './memoryPrompt.js';
 
-export async function planNextStep({ goal, history = [], sections = [] }) {
+export async function planNextStep({ goal, history = [], sections = [], memoryContext = null }) {
   const lowerGoal = (goal || '').toLowerCase();
   const nextAgent = history.length === 0 ? 'retriever' : history.length < 2 ? 'interviewer' : 'critic';
 
@@ -18,9 +19,10 @@ export async function planNextStep({ goal, history = [], sections = [] }) {
   };
 
   const system = await loadPrompt('planner', 'You are a planner agent.');
+  const memoryBlock = formatMemoryContext(memoryContext, { limit: 6 });
   const result = await callLLMJson({
     system,
-    user: `目标：${goal}\n历史轮次：${history.length}\n已识别模块：${sections.map((s) => s.title).join(', ')}`,
+    user: `目标：${goal}\n历史轮次：${history.length}\n已识别模块：${sections.map((s) => s.title).join(', ')}\n长期记忆：\n${memoryBlock}`,
     schemaHint: '{currentStage:string,nextAgent:string,reason:string,sectionHints:string[]}',
     fallbackObject
   });

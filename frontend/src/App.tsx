@@ -390,13 +390,26 @@ export default function App() {
               {displayTab === 'resume' && (
                 <div className="display-section">
                   {parseResult ? (
-                    <div className="section-list compact">
-                      {parseResult.sections.map((section) => (
-                        <div key={section.title} className="section-item">
-                          <h5>{section.title}</h5>
-                          <ul>{section.content.slice(0, 5).map((item, idx) => <li key={idx}>{item}</li>)}</ul>
+                    <div className="resume-parse-view">
+                      <div className="detail-grid two-col">
+                        <div className="detail-card"><span>原文字符数</span><strong>{parseResult.text?.length || 0}</strong></div>
+                        <div className="detail-card"><span>解析分块</span><strong>{parseResult.kbSize}</strong></div>
+                      </div>
+                      <div className="detail-block">
+                        <h4>完整原文</h4>
+                        <pre className="resume-full-text">{parseResult.text || ''}</pre>
+                      </div>
+                      <div className="detail-block">
+                        <h4>识别模块</h4>
+                        <div className="section-list compact">
+                          {parseResult.sections.length ? parseResult.sections.map((section) => (
+                            <div key={section.title} className="section-item">
+                              <h5>{section.title}</h5>
+                              <ul>{section.content.map((item, idx) => <li key={idx}>{item}</li>)}</ul>
+                            </div>
+                          )) : <p className="empty">未识别到结构化模块，请查看上方完整原文。</p>}
                         </div>
-                      ))}
+                      </div>
                     </div>
                   ) : <p className="empty">解析简历后，这里会展示识别出的模块和风险术语。</p>}
                   {parseResult?.risks?.length ? <div className="chip-wrap">{parseResult.risks.map((risk) => <span key={risk.term} className="chip danger">{risk.term}</span>)}</div> : null}

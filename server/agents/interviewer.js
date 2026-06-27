@@ -1,5 +1,6 @@
 import { loadPrompt } from '../services/promptLoader.js';
 import { callLLMJson } from '../services/llmClient.js';
+import { formatMemoryContext } from './memoryPrompt.js';
 
 const DEPTH_STAGES = [
   { label: '背景澄清', hint: '先厘清这段经历的背景、目标与候选人具体职责。' },
@@ -39,7 +40,7 @@ function fallbackQuestions(focus, previousAnswer = '', depth = 0) {
   };
 }
 
-export async function generateInterviewQuestions({ goal, retrieved, previousAnswer = '', previousQuestion = '', depth = 0, askedQuestions = [] }) {
+export async function generateInterviewQuestions({ goal, retrieved, previousAnswer = '', previousQuestion = '', depth = 0, askedQuestions = [], memoryContext = null }) {
   const focus = retrieved[0]?.content || '候选人经历片段';
   const stage = stageForDepth(depth);
   const fallbackObject = fallbackQuestions(focus, previousAnswer, depth);
@@ -49,7 +50,7 @@ export async function generateInterviewQuestions({ goal, retrieved, previousAnsw
     : '';
   const result = await callLLMJson({
     system,
-    user: `目标：${goal}\n当前追问阶段：第 ${depth + 1} 轮「${stage.label}」——${stage.hint}\n上一轮问题：${previousQuestion}\n上一轮回答：${previousAnswer}${askedBlock}\n检索片段：\n${retrieved.map((r, i) => `${i + 1}. ${r.content}`).join('\n')}\n\n请生成连续追问：detail[0] 必须是基于上一轮回答、聚焦当前阶段的递进追问，且不与已问问题重复。`,
+    user: `目标：${goal}\n当前追问阶段：第 ${depth + 1} 轮「${stage.label}」——${stage.hint}\n上一轮问题：${previousQuestion}\n上一轮回答：${previousAnswer}${askedBlock}\n长期记忆：\n${formatMemoryContext(memoryContext, { limit: 8 })}\n检索片段：\n${retrieved.map((r, i) => `${i + 1}. ${r.content}`).join('\n')}\n\n请生成连续追问：detail[0] 必须是基于上一轮回答、聚焦当前阶段的递进追问，且不与已问问题重复。`,
     schemaHint: '{basic:string[],detail:string[],pressure:string[]}',
     fallbackObject
   });

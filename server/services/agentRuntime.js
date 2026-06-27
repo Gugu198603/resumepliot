@@ -75,7 +75,7 @@ async function retrieveMemoryBucket({ label, query, scopes, types, userId, resum
   }
 }
 
-async function loadRuntimeMemory({ goal, userId, resumeId, sessionId, jobId }) {
+export async function loadRuntimeMemory({ goal, userId, resumeId, sessionId, jobId }) {
   const query = goal || '';
   const buckets = await Promise.all([
     retrieveMemoryBucket({ label: 'global', query, scopes: ['global'], limit: 3 }),
@@ -344,7 +344,7 @@ export async function runAgentWorkflow({
       parseOutput = { sections, risks: risks.length ? risks : detectRisks(sourceText) };
       agentOutputs.push({ step, output: parseOutput });
     } else if (step.agent === 'planner') {
-      plan = await planNextStep({ goal, history, sections });
+      plan = await planNextStep({ goal, history, sections, memoryContext });
       if (plan.llm) llmTrace.push({ agent: 'planner', ...plan.llm });
       agentOutputs.push({ step, output: plan });
     } else if (step.agent === 'retriever') {
@@ -381,16 +381,16 @@ export async function runAgentWorkflow({
       });
       agentOutputs.push({ step, output: { retrieved, retrievalMeta, memoryContext } });
     } else if (step.agent === 'interviewer') {
-      const result = await generateInterviewQuestions({ goal, retrieved, previousAnswer: answer, depth, askedQuestions });
+      const result = await generateInterviewQuestions({ goal, retrieved, previousAnswer: answer, depth, askedQuestions, memoryContext });
       questions = result.questions;
       if (result.llm) llmTrace.push({ agent: 'interviewer', ...result.llm });
       agentOutputs.push({ step, output: result });
     } else if (step.agent === 'critic' && answer) {
-      critique = await critiqueAnswer({ answer, retrieved, question: questions?.detail?.[0] || questions?.basic?.[0] || '' });
+      critique = await critiqueAnswer({ answer, retrieved, question: questions?.detail?.[0] || questions?.basic?.[0] || '', memoryContext });
       if (critique.llm) llmTrace.push({ agent: 'critic', ...critique.llm });
       agentOutputs.push({ step, output: critique });
     } else if (step.agent === 'writer' && answer) {
-      rewrite = await rewriteArtifacts({ text: sourceText, answer, feedback: critique?.feedback || [] });
+      rewrite = await rewriteArtifacts({ text: sourceText, answer, feedback: critique?.feedback || [], memoryContext });
       if (rewrite.llm) llmTrace.push({ agent: 'writer', ...rewrite.llm });
       agentOutputs.push({ step, output: rewrite });
     }

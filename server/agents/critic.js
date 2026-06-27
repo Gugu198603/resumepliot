@@ -1,8 +1,9 @@
 import { embedBatch, similarity } from '../services/vectorStore.js';
 import { loadPrompt } from '../services/promptLoader.js';
 import { callLLMJson } from '../services/llmClient.js';
+import { formatMemoryContext } from './memoryPrompt.js';
 
-export async function critiqueAnswer({ answer, retrieved = [], question = '' }) {
+export async function critiqueAnswer({ answer, retrieved = [], question = '', memoryContext = null }) {
   const len = answer.trim().length;
   const detailScore = Math.min(10, Math.floor(len / 35) + 2);
 
@@ -25,7 +26,7 @@ export async function critiqueAnswer({ answer, retrieved = [], question = '' }) 
   const system = await loadPrompt('critic', 'You are a critic agent.');
   const result = await callLLMJson({
     system,
-    user: `问题：${question}\n回答：${answer}\n检索片段：\n${retrieved.map((r, i) => `${i + 1}. ${r.content}`).join('\n')}`,
+    user: `问题：${question}\n回答：${answer}\n长期记忆：\n${formatMemoryContext(memoryContext, { limit: 8 })}\n检索片段：\n${retrieved.map((r, i) => `${i + 1}. ${r.content}`).join('\n')}`,
     schemaHint: '{feedback:string[]}',
     fallbackObject
   });

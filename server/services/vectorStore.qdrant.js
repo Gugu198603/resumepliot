@@ -112,6 +112,79 @@ export async function retrieveTopK(kb, query, topK = 3) {
   }));
 }
 
+export async function upsertMemoryPoint({ namespace, memoryId, content, payload = {} }) {
+  if (!namespace || !memoryId || !String(content || '').trim()) return null;
+  await ensureCollection();
+  const vector = await embedOne(content);
+  const pointId = buildPointId(namespace, memoryId);
+
+  await qdrantFetch(`/collections/${QDRANT_COLLECTION}/points?wait=true`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      points: [
+        {
+          id: pointId,
+          vector,
+          payload: {
+            namespace,
+            memoryId,
+            content,
+            kind: 'memory',
+            ...payload
+          }
+        }
+      ]
+    })
+  });
+
+  return {
+    pointId,
+    namespace,
+    vectorDim: vector.length
+  };
+}
+
+async function searchMemoryNamespace(namespace, queryVector, limit) {
+  const result = await qdrantFetch(`/collections/${QDRANT_COLLECTION}/points/search`, {
+    method: 'POST',
+    body: JSON.stringify({
+      vector: queryVector,
+      limit,
+      with_payload: true,
+      filter: {
+        must: [
+          { key: 'kind', match: { value: 'memory' } },
+          { key: 'namespace', match: { value: namespace } }
+        ]
+      }
+    })
+  });
+
+  return (result.result || []).map((item) => ({
+    memoryId: item.payload?.memoryId,
+    namespace: item.payload?.namespace || namespace,
+    content: item.payload?.content,
+    score: Number((item.score || 0).toFixed(3)),
+    pointId: item.id
+  })).filter((item) => item.memoryId);
+}
+
+export async function searchMemoryPoints({ namespaces = [], query = '', limit = 10 }) {
+  const uniqueNamespaces = [...new Set((namespaces || []).filter(Boolean))];
+  if (!uniqueNamespaces.length || !String(query || '').trim()) return [];
+  await ensureCollection();
+  const queryVector = await embedOne(query);
+  const perNamespaceLimit = Math.max(1, Math.min(limit, 20));
+  const results = await Promise.all(
+    uniqueNamespaces.map((namespace) => searchMemoryNamespace(namespace, queryVector, perNamespaceLimit))
+  );
+
+  return results
+    .flat()
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+}
+
 export async function debugCollectionInfo() {
   return await qdrantFetch(`/collections/${QDRANT_COLLECTION}`);
 }

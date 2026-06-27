@@ -19,8 +19,8 @@ export default function ResumeDetailPanel({ resume }: { resume: Resume | null })
         <div className="detail-card"><span>KB Size</span><strong>{resume.kbSize || '-'}</strong></div>
       </div>
       <div className="detail-block">
-        <h4>Resume Text Preview</h4>
-        <pre>{resume.text || ''}</pre>
+        <h4>Resume Full Text</h4>
+        <pre className="resume-full-text">{resume.text || ''}</pre>
       </div>
       <div className="detail-block">
         <h4>Risk Terms</h4>
@@ -36,7 +36,7 @@ export default function ResumeDetailPanel({ resume }: { resume: Resume | null })
           {(resume.sections || []).map((section: Section) => (
             <div className="section-item" key={section.title}>
               <h5>{section.title}</h5>
-              <ul>{(section.content || []).slice(0, 6).map((item: string, idx: number) => <li key={idx}>{item}</li>)}</ul>
+              <ul>{(section.content || []).map((item: string, idx: number) => <li key={idx}>{item}</li>)}</ul>
             </div>
           ))}
         </div>

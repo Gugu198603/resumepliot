@@ -17,4 +17,12 @@ export async function retrieveTopK(kb, query, topK = 3) {
     .map(({ id, content, score }) => ({ id, content, score: Number(score.toFixed(3)) }));
 }
 
+export async function upsertMemoryPoint() {
+  return null;
+}
+
+export async function searchMemoryPoints() {
+  return [];
+}
+
 export const provider = 'memory';

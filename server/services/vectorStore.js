@@ -10,4 +10,6 @@ if (providerName === 'qdrant') {
 export const provider = providerModule.provider;
 export const buildKnowledgeBase = providerModule.buildKnowledgeBase;
 export const retrieveTopK = providerModule.retrieveTopK;
+export const upsertMemoryPoint = providerModule.upsertMemoryPoint;
+export const searchMemoryPoints = providerModule.searchMemoryPoints;
 export { embedBatch, embedOne, similarity, chunkText } from './vectorStore.shared.js';

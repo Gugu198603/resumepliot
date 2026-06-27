@@ -1,6 +1,7 @@
 import { createHash } from 'crypto';
 import { PrismaClient } from '@prisma/client';
 import { logger } from './logger.js';
+import { provider as vectorProvider, searchMemoryPoints, upsertMemoryPoint } from './vectorStore.js';
 
 const prisma = new PrismaClient();
 
@@ -16,6 +17,9 @@ export const MEMORY_TYPES = new Set([
   'retrieval_feedback',
   'tool_observation'
 ]);
+
+const PROMOTION_HIT_THRESHOLD = Number(process.env.MEMORY_PROMOTION_HIT_THRESHOLD || 3);
+const PROMOTION_TARGETS = ['session', 'resume', 'user'];
 
 function toJsonString(value) {
   if (value === undefined || value === null) return null;
@@ -43,6 +47,39 @@ function preview(value, limit = 120) {
 function asArray(value) {
   if (value === undefined || value === null) return [];
   return Array.isArray(value) ? value : [value];
+}
+
+function entityIdForScope(scope, input = {}) {
+  if (scope === 'global') return 'global';
+  if (scope === 'user') return input.userId || null;
+  if (scope === 'resume') return input.resumeId || null;
+  if (scope === 'session') return input.sessionId || null;
+  if (scope === 'job') return input.jobId || null;
+  if (scope === 'run') return input.runId || input.sourceId || null;
+  return null;
+}
+
+export function buildMemoryNamespace(scope, input = {}) {
+  const entityId = entityIdForScope(scope, input);
+  return entityId ? `memory:${scope}:${entityId}` : null;
+}
+
+function buildSearchNamespaces(options = {}) {
+  const scopes = asArray(options.scopes);
+  const targets = scopes.length ? scopes : [...MEMORY_SCOPES];
+  return targets
+    .map((scope) => buildMemoryNamespace(scope, options))
+    .filter(Boolean);
+}
+
+function isPromotableRunSummary(row) {
+  return row?.scope === 'run' && row?.type === 'summary' && row?.status === 'active';
+}
+
+function promotionTargetsFor(row) {
+  return PROMOTION_TARGETS
+    .map((scope) => ({ scope, entityId: entityIdForScope(scope, row) }))
+    .filter((target) => target.entityId);
 }
 
 function validateMemoryInput(input) {
@@ -84,6 +121,55 @@ function mapMemory(row) {
     ...row,
     metadata: fromJsonString(row.metadataJson, null)
   };
+}
+
+async function indexMemoryRow(row) {
+  if (!row || vectorProvider !== 'qdrant') return { indexed: false, reason: 'vector_provider_not_qdrant' };
+  const namespace = buildMemoryNamespace(row.scope, row);
+  if (!namespace) return { indexed: false, reason: 'missing_namespace' };
+
+  try {
+    const indexed = await upsertMemoryPoint({
+      namespace,
+      memoryId: row.id,
+      content: row.content,
+      payload: {
+        scope: row.scope,
+        type: row.type,
+        userId: row.userId || null,
+        resumeId: row.resumeId || null,
+        sessionId: row.sessionId || null,
+        jobId: row.jobId || null,
+        runId: row.runId || null,
+        sourceKind: row.sourceKind || null,
+        sourceId: row.sourceId || null,
+        title: row.title || null,
+        contentHash: row.contentHash || null
+      }
+    });
+
+    if (!indexed?.pointId) return { indexed: false, reason: 'empty_point' };
+
+    const updated = await prisma.memoryItem.update({
+      where: { id: row.id },
+      data: {
+        embeddingProvider: process.env.EMBED_MODEL || 'Xenova/bge-m3',
+        vectorProvider,
+        vectorNamespace: indexed.namespace,
+        vectorPointId: indexed.pointId,
+        vectorDim: indexed.vectorDim
+      }
+    });
+    return { indexed: true, row: updated };
+  } catch (error) {
+    logger.info('memory.vector.index_failed', {
+      id: row.id,
+      scope: row.scope,
+      type: row.type,
+      error: error.message
+    });
+    return { indexed: false, reason: error.message };
+  }
 }
 
 function buildWhere({
@@ -167,7 +253,22 @@ export async function writeMemory(input = {}) {
   });
 
   try {
-    const row = await prisma.memoryItem.create({
+      const namespace = input.vectorNamespace || buildMemoryNamespace(input.scope, input);
+      const existing = await prisma.memoryItem.findFirst({
+        where: {
+          scope: input.scope,
+          type: input.type,
+          contentHash: hash,
+          userId: input.userId || null,
+          resumeId: input.resumeId || null,
+          sessionId: input.sessionId || null,
+          jobId: input.jobId || null,
+          runId: input.runId || null,
+          sourceKind: input.sourceKind || null,
+          sourceId: input.sourceId || null
+        }
+      });
+      const row = existing || await prisma.memoryItem.create({
       data: {
         userId: input.userId || null,
         resumeId: input.resumeId || null,
@@ -185,7 +286,7 @@ export async function writeMemory(input = {}) {
         confidence: Number.isFinite(input.confidence) ? input.confidence : 1.0,
         embeddingProvider: input.embeddingProvider || null,
         vectorProvider: input.vectorProvider || null,
-        vectorNamespace: input.vectorNamespace || null,
+          vectorNamespace: namespace || null,
         vectorPointId: input.vectorPointId || null,
         vectorDim: Number.isFinite(input.vectorDim) ? input.vectorDim : null,
         status: input.status || 'active',
@@ -193,18 +294,24 @@ export async function writeMemory(input = {}) {
         metadataJson: toJsonString(input.metadata)
       }
     });
+      const indexResult = existing?.vectorPointId ? { row: existing } : await indexMemoryRow(row);
+      const mapped = mapMemory(indexResult.row || row);
 
     logger.info('memory.write.success', {
-      id: row.id,
-      scope: row.scope,
-      type: row.type,
-      sourceKind: row.sourceKind,
-      sourceId: row.sourceId,
-      contentHash: row.contentHash,
+        id: mapped.id,
+        scope: mapped.scope,
+        type: mapped.type,
+        sourceKind: mapped.sourceKind,
+        sourceId: mapped.sourceId,
+        contentHash: mapped.contentHash,
+        vectorProvider: mapped.vectorProvider || null,
+        vectorNamespace: mapped.vectorNamespace || null,
+        vectorPointId: mapped.vectorPointId || null,
+        reusedExisting: Boolean(existing),
       latencyMs: Date.now() - startedAt
     });
 
-    return mapMemory(row);
+      return mapped;
   } catch (error) {
     logger.info('memory.write.error', {
       scope: input.scope,
@@ -217,6 +324,118 @@ export async function writeMemory(input = {}) {
     });
     throw error;
   }
+}
+
+async function retrieveVectorMemoryCandidates(options, limit) {
+  if (vectorProvider !== 'qdrant' || !String(options.query || '').trim()) return [];
+  const namespaces = buildSearchNamespaces(options);
+  if (!namespaces.length) return [];
+
+  try {
+    const points = await searchMemoryPoints({ namespaces, query: options.query, limit });
+    const ids = [...new Set(points.map((point) => point.memoryId).filter(Boolean))];
+    if (!ids.length) return [];
+    const scopeList = asArray(options.scopes);
+    const typeList = asArray(options.types);
+    const rows = await prisma.memoryItem.findMany({
+      where: {
+        id: { in: ids },
+        ...(scopeList.length ? { scope: { in: scopeList } } : {}),
+        ...(typeList.length ? { type: { in: typeList } } : {}),
+        status: options.status || 'active',
+        ...(options.includeExpired
+          ? {}
+          : {
+              OR: [
+                { expiresAt: null },
+                { expiresAt: { gt: new Date() } }
+              ]
+            })
+      }
+    });
+    const scoreById = new Map(points.map((point) => [point.memoryId, point]));
+    return rows.map((row) => ({
+      ...row,
+      retrievalScore: scoreById.get(row.id)?.score || null,
+      retrievalSource: 'vector'
+    }));
+  } catch (error) {
+    logger.info('memory.vector.retrieve_failed', {
+      query: preview(options.query, 160),
+      namespaces,
+      error: error.message
+    });
+    return [];
+  }
+}
+
+async function promoteMemoryItem(row) {
+  if (!isPromotableRunSummary(row)) return [];
+  const targets = promotionTargetsFor(row);
+  if (!targets.length) return [];
+  const promoted = [];
+
+  for (const target of targets) {
+    const exists = await prisma.memoryItem.findFirst({
+      where: {
+        scope: target.scope,
+        type: row.type,
+        contentHash: row.contentHash,
+        userId: target.scope === 'user' ? row.userId : null,
+        resumeId: target.scope === 'resume' ? row.resumeId : null,
+        sessionId: target.scope === 'session' ? row.sessionId : null,
+        sourceKind: 'memory_promotion',
+        sourceId: row.id
+      }
+    });
+    if (exists) continue;
+
+    const namespace = buildMemoryNamespace(target.scope, row);
+    const created = await prisma.memoryItem.create({
+      data: {
+        userId: target.scope === 'user' ? row.userId : null,
+        resumeId: target.scope === 'resume' ? row.resumeId : null,
+        sessionId: target.scope === 'session' ? row.sessionId : null,
+        jobId: null,
+        runId: null,
+        scope: target.scope,
+        type: row.type,
+        sourceKind: 'memory_promotion',
+        sourceId: row.id,
+        title: row.title ? `[promoted:${target.scope}] ${row.title}` : `Promoted ${target.scope} memory`,
+        content: row.content,
+        contentHash: row.contentHash,
+        importance: Math.min(1, (row.importance || 0.5) + 0.1),
+        confidence: Math.max(0, (row.confidence || 1) - 0.05),
+        vectorNamespace: namespace,
+        status: 'active',
+        metadataJson: toJsonString({
+          promotedFrom: row.id,
+          promotedFromScope: row.scope,
+          promotedAtAccessCount: row.accessCount
+        })
+      }
+    });
+    const indexResult = await indexMemoryRow(created);
+    promoted.push(mapMemory(indexResult.row || created));
+  }
+
+  if (promoted.length) {
+    logger.info('memory.promote.success', {
+      sourceId: row.id,
+      targets: promoted.map((item) => ({ id: item.id, scope: item.scope }))
+    });
+  }
+  return promoted;
+}
+
+async function promoteRetrievedMemories(rows = []) {
+  const candidates = rows.filter((row) => isPromotableRunSummary(row) && (row.accessCount || 0) + 1 >= PROMOTION_HIT_THRESHOLD);
+  const results = [];
+  for (const row of candidates) {
+    results.push(...await promoteMemoryItem(row));
+  }
+  return results;
 }
 
 export async function retrieveMemory(options = {}) {
@@ -252,38 +471,59 @@ export async function retrieveMemory(options = {}) {
       ],
       take: limit
     });
+    const vectorRows = await retrieveVectorMemoryCandidates(options, limit);
+    const mergedById = new Map();
+    for (const row of [...vectorRows, ...rows]) {
+      const current = mergedById.get(row.id);
+      if (!current || (row.retrievalScore || 0) > (current.retrievalScore || 0)) {
+        mergedById.set(row.id, row);
+      }
+    }
+    const mergedRows = [...mergedById.values()]
+      .sort((a, b) => {
+        const scoreDiff = (b.retrievalScore || 0) - (a.retrievalScore || 0);
+        if (scoreDiff) return scoreDiff;
+        const importanceDiff = (b.importance || 0) - (a.importance || 0);
+        if (importanceDiff) return importanceDiff;
+        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+      })
+      .slice(0, limit);
 
     logger.info('memory.retrieve.db_result', {
-      count: rows.length,
-      ids: rows.map((row) => row.id),
-      scopes: [...new Set(rows.map((row) => row.scope))],
-      types: [...new Set(rows.map((row) => row.type))],
-      topScore: rows[0] ? { importance: rows[0].importance, confidence: rows[0].confidence } : null,
+      count: mergedRows.length,
+      dbCount: rows.length,
+      vectorCount: vectorRows.length,
+      ids: mergedRows.map((row) => row.id),
+      scopes: [...new Set(mergedRows.map((row) => row.scope))],
+      types: [...new Set(mergedRows.map((row) => row.type))],
+      topScore: mergedRows[0] ? { importance: mergedRows[0].importance, confidence: mergedRows[0].confidence, retrievalScore: mergedRows[0].retrievalScore || null } : null,
       latencyMs: Date.now() - startedAt
     });
 
-    if (rows.length && options.touch !== false) {
+    if (mergedRows.length && options.touch !== false) {
       const touchStartedAt = Date.now();
       await prisma.memoryItem.updateMany({
-        where: { id: { in: rows.map((row) => row.id) } },
+        where: { id: { in: mergedRows.map((row) => row.id) } },
         data: {
           accessCount: { increment: 1 },
           lastAccessedAt: new Date()
         }
       });
+      const promoted = await promoteRetrievedMemories(mergedRows);
       logger.info('memory.retrieve.touch_success', {
-        count: rows.length,
-        ids: rows.map((row) => row.id),
+        count: mergedRows.length,
+        ids: mergedRows.map((row) => row.id),
+        promotedCount: promoted.length,
         latencyMs: Date.now() - touchStartedAt
       });
     }
 
     logger.info('memory.retrieve.success', {
-      count: rows.length,
+      count: mergedRows.length,
       totalLatencyMs: Date.now() - startedAt
     });
 
-    return rows.map(mapMemory);
+    return mergedRows.map(mapMemory);
   } catch (error) {
     logger.info('memory.retrieve.error', {
       query: preview(options.query, 160),
