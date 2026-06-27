@@ -41,6 +41,7 @@ import { getAppRoadmap } from './services/appPlanner.js';
 import { getLLMConfig } from './services/llmClient.js';
 import { computeLlmMetrics } from './services/llmMetrics.js';
 import { runAgentWorkflow } from './services/agentRuntime.js';
+import { DEFAULT_GOLDEN_QUERIES, evaluateRag } from './services/ragEvaluation.js';
 import { listSources, fetchFromSource } from './services/jobSources/index.js';
 import { startScheduler, getSchedulerStatus, runOnce } from './services/jobScheduler.js';
 
@@ -187,6 +188,19 @@ app.get('/api/llm-readiness', (_, res) => {
       : ['未设置 OPENAI_API_KEY，所有 agent 当前运行在 fallback 启发式模式（输出为模板拼接，非真实生成）。']
   });
 });
+app.post('/api/rag-eval', async (req, res) => {
+  try {
+    const { resumeId = null, text = '', queries = DEFAULT_GOLDEN_QUERIES, topK = 3 } = req.body || {};
+    const resume = resumeId ? await getResume(resumeId) : null;
+    if (resumeId && !resume) return res.status(404).json({ error: 'Resume not found' });
+    if (!resume && !String(text || '').trim()) {
+      return res.status(400).json({ error: 'resumeId or text is required' });
+    }
+    res.json(await evaluateRag({ resume, text, queries, topK }));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 app.get('/api/runs/:id', async (req, res) => { const run = await getRun(req.params.id); if (!run) return res.status(404).json({ error: 'Run not found' }); res.json({ run }); });
 app.get('/api/resumes', async (_, res) => { res.json({ resumes: await listResumes() }); });
 app.post('/api/resumes/compare', async (req, res) => {
@@ -320,8 +334,8 @@ app.post('/api/agent-run', async (req, res) => {
       resumeId: persistedResume?.id || resumeId || null,
       vectorProvider
     });
-    const { status, error, agentOutputs, llmTrace, llmSummary, parseOutput, plan, retrieved, questions, critique, rewrite, retrievalMeta, memoryContext, memoryWrite, recovery, runtimeRunId } = runtime;
-    const record = await saveRunRecord({ status, error, goal, hasAnswer: Boolean(answer), resumeId: persistedResume?.id || resumeId || null, skill: skill.selectedSkill, executionPlan, vectorProvider, agentOutputs, retrievalMeta, llmTrace, llmSummary, recovery });
+    const { status, error, agentOutputs, llmTrace, llmSummary, parseOutput, plan, retrieved, questions, critique, rewrite, retrievalMeta, memoryContext, memoryWrite, recovery, runtimeRunId, runEvents, runtimeLimits } = runtime;
+    const record = await saveRunRecord({ status, error, goal, hasAnswer: Boolean(answer), sessionId, resumeId: persistedResume?.id || resumeId || null, skill: skill.selectedSkill, executionPlan, vectorProvider, agentOutputs, retrievalMeta, llmTrace, llmSummary, recovery, runtimeRunId, runEvents, runtimeLimits });
     let session = null;
     if (status === 'succeeded' && (sessionId || goal)) {
       session = sessionId ? await getSession(sessionId) : await findOrCreateSessionByGoal(goal, { resumeId: persistedResume?.id || resumeId || null });
@@ -331,7 +345,7 @@ app.post('/api/agent-run', async (req, res) => {
       }
     }
     const responseStatus = status === 'succeeded' ? 200 : 500;
-    res.status(responseStatus).json({ runId: record.id, runtimeRunId, status, error, sessionId: session?.id || null, resumeId: persistedResume?.id || resumeId || null, skill, executionPlan, agentOutputs, plan, parseOutput, retrieved, questions, critique, rewrite, retrievalMeta, memoryContext, memoryWrite, recovery, vectorProvider, llmTrace, llmSummary });
+    res.status(responseStatus).json({ runId: record.id, runtimeRunId, status, error, sessionId: session?.id || null, resumeId: persistedResume?.id || resumeId || null, skill, executionPlan, agentOutputs, plan, parseOutput, retrieved, questions, critique, rewrite, retrievalMeta, memoryContext, memoryWrite, recovery, runEvents, runtimeLimits, vectorProvider, llmTrace, llmSummary });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

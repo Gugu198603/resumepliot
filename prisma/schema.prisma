@@ -8,52 +8,94 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  email     String?  @unique
+  id        String       @id @default(cuid())
+  email     String?      @unique
   name      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
   resumes   Resume[]
   sessions  Session[]
+  memories  MemoryItem[]
 }
 
 model Resume {
-  id           String           @id @default(cuid())
+  id           String       @id @default(cuid())
   userId       String?
   title        String?
   originalText String
   parsedJson   String?
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
-  user         User?            @relation(fields: [userId], references: [id])
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  user         User?        @relation(fields: [userId], references: [id])
   runs         Run[]
+  memories     MemoryItem[]
 }
 
 model Session {
-  id        String    @id @default(cuid())
+  id        String       @id @default(cuid())
   userId    String?
   resumeId  String?
   title     String?
   goal      String?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  user      User?     @relation(fields: [userId], references: [id])
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  user      User?        @relation(fields: [userId], references: [id])
   runs      Run[]
   messages  Message[]
+  memories  MemoryItem[]
 }
 
 model Run {
-  id             String    @id @default(cuid())
+  id             String       @id @default(cuid())
   sessionId      String?
   resumeId       String?
+  runtimeRunId   String?
+  status         String       @default("pending")
   goal           String?
   skillId        String?
   vectorProvider String?
   executionPlan  String?
   resultJson     String?
-  createdAt      DateTime  @default(now())
-  session        Session?  @relation(fields: [sessionId], references: [id])
-  resume         Resume?   @relation(fields: [resumeId], references: [id])
+  errorCode      String?
+  errorMessage   String?
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  latencyMs      Int?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  session        Session?     @relation(fields: [sessionId], references: [id])
+  resume         Resume?      @relation(fields: [resumeId], references: [id])
+  events         RunEvent[]
+  memories       MemoryItem[]
+
+  @@index([status, createdAt])
+  @@index([runtimeRunId])
+  @@index([sessionId, status, createdAt])
+  @@index([resumeId, status, createdAt])
+}
+
+model RunEvent {
+  id           String   @id @default(cuid())
+  runId        String
+  runtimeRunId String?
+  sequence     Int
+  type         String
+  agent        String?
+  status       String?
+  latencyMs    Int?
+  errorCode    String?
+  errorMessage String?
+  payloadJson  String?
+  createdAt    DateTime @default(now())
+  run          Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, sequence])
+  @@index([runtimeRunId, sequence])
+  @@index([type, agent])
+  @@index([runId, type, sequence])
+  @@index([runId, status, sequence])
+  @@index([agent, createdAt])
+  @@index([errorCode, createdAt])
 }
 
 model Message {
@@ -66,26 +108,73 @@ model Message {
 }
 
 model JobDescription {
-  id           String   @id @default(cuid())
+  id           String       @id @default(cuid())
   title        String?
   company      String?
   location     String?
-  source       String?  @default("manual")
+  source       String?      @default("manual")
   sourceUrl    String?
-  dedupeKey    String?  @unique
+  dedupeKey    String?      @unique
   originalText String
   parsedJson   String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
   matches      JobMatch[]
+  memories     MemoryItem[]
 }
 
 model JobMatch {
-  id          String   @id @default(cuid())
-  jobId       String
-  resumeId    String?
-  matchScore  Int      @default(0)
-  resultJson  String?
-  createdAt   DateTime @default(now())
-  job         JobDescription @relation(fields: [jobId], references: [id])
+  id         String         @id @default(cuid())
+  jobId      String
+  resumeId   String?
+  matchScore Int            @default(0)
+  resultJson String?
+  createdAt  DateTime       @default(now())
+  job        JobDescription @relation(fields: [jobId], references: [id])
+}
+
+model MemoryItem {
+  id                String          @id @default(cuid())
+  userId            String?
+  resumeId          String?
+  sessionId         String?
+  jobId             String?
+  runId             String?
+  scope             String
+  type              String
+  sourceKind        String?
+  sourceId          String?
+  title             String?
+  content           String
+  contentHash       String?
+  importance        Float           @default(0.5)
+  confidence        Float           @default(1.0)
+  accessCount       Int             @default(0)
+  lastAccessedAt    DateTime?
+  embeddingProvider String?
+  vectorProvider    String?
+  vectorNamespace   String?
+  vectorPointId     String?
+  vectorDim         Int?
+  status            String          @default("active")
+  expiresAt         DateTime?
+  metadataJson      String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  user              User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  resume            Resume?         @relation(fields: [resumeId], references: [id], onDelete: SetNull)
+  session           Session?        @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  job               JobDescription? @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  run               Run?            @relation(fields: [runId], references: [id], onDelete: SetNull)
+
+  @@index([scope, type])
+  @@index([userId, scope])
+  @@index([resumeId, type])
+  @@index([sessionId, type])
+  @@index([jobId, type])
+  @@index([runId])
+  @@index([sourceKind, sourceId])
+  @@index([vectorNamespace])
+  @@index([status, expiresAt])
+  @@index([contentHash])
 }

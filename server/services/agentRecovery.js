@@ -217,6 +217,15 @@ export function createRecoveryRuntime({ policy = {}, initialFingerprints = [] } 
         }
         return result;
       } catch (error) {
+        if (error instanceof AgentRecoveryHardStopError) {
+          recordEvent({
+            type: 'recovery_hard_stop',
+            stepName,
+            code: error.code,
+            message: error.message
+          });
+          throw error;
+        }
         const classified = classifyAgentError(error);
         const fp = createErrorFingerprint({ error, stepName, args });
         const entry = fingerprintCache.record({

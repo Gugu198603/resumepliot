@@ -92,26 +92,88 @@ export async function deleteResume(id) {
 
 export async function saveRunRecord(record) {
   const client = await getPrisma();
-  return await client.run.create({
+  const terminalEvent = Array.isArray(record.runEvents)
+    ? [...record.runEvents].reverse().find((event) => event.type === 'run_success' || event.type === 'run_failed')
+    : null;
+  const finishedAt = terminalEvent ? new Date() : null;
+  const latencyMs = Number.isFinite(terminalEvent?.latencyMs) ? terminalEvent.latencyMs : null;
+  const startedAt = finishedAt && latencyMs != null ? new Date(finishedAt.getTime() - latencyMs) : null;
+  const run = await client.run.create({
     data: {
+      sessionId: record.sessionId || null,
+      resumeId: record.resumeId || null,
+      runtimeRunId: record.runtimeRunId || null,
+      status: record.status || 'pending',
       goal: record.goal || '',
       skillId: record.skill?.id || record.skillId || null,
       vectorProvider: record.vectorProvider || null,
       executionPlan: toJsonString(record.executionPlan || []),
-      resultJson: toJsonString(record)
+      resultJson: toJsonString(record),
+      errorCode: record.error?.code || null,
+      errorMessage: record.error?.message || null,
+      startedAt,
+      finishedAt,
+      latencyMs
     }
   });
+  if (Array.isArray(record.runEvents) && record.runEvents.length) {
+    await client.runEvent.createMany({
+      data: record.runEvents.map((event, index) => ({
+        runId: run.id,
+        runtimeRunId: event.runtimeRunId || record.runtimeRunId || null,
+        sequence: Number.isFinite(event.sequence) ? event.sequence : index + 1,
+        type: event.type || 'unknown',
+        agent: event.agent || null,
+        status: event.status || null,
+        latencyMs: Number.isFinite(event.latencyMs) ? event.latencyMs : null,
+        errorCode: event.errorCode || null,
+        errorMessage: event.errorMessage || null,
+        payloadJson: toJsonString(event.payload || null)
+      }))
+    });
+  }
+  return mapRun({ ...run, events: record.runEvents || [] });
 }
 
 function mapRun(record) {
   if (!record) return null;
+  const result = fromJsonString(record.resultJson, {}) || {};
   return {
     id: record.id,
+    sessionId: record.sessionId,
+    resumeId: record.resumeId,
+    runtimeRunId: record.runtimeRunId || result.runtimeRunId || null,
+    status: record.status || result.status || 'succeeded',
     goal: record.goal,
     skillId: record.skillId,
     vectorProvider: record.vectorProvider,
     executionPlan: fromJsonString(record.executionPlan, []) || [],
-    ...(fromJsonString(record.resultJson, {}) || {}),
+    errorCode: record.errorCode || result.error?.code || null,
+    errorMessage: record.errorMessage || result.error?.message || null,
+    startedAt: record.startedAt || null,
+    finishedAt: record.finishedAt || null,
+    latencyMs: record.latencyMs ?? null,
+    ...result,
+    runEvents: (record.events || result.runEvents || []).map(mapRunEvent),
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt
+  };
+}
+
+function mapRunEvent(record) {
+  if (!record) return null;
+  return {
+    id: record.id,
+    runId: record.runId,
+    runtimeRunId: record.runtimeRunId,
+    sequence: record.sequence,
+    type: record.type,
+    agent: record.agent,
+    status: record.status,
+    latencyMs: record.latencyMs,
+    errorCode: record.errorCode,
+    errorMessage: record.errorMessage,
+    payload: record.payload !== undefined ? record.payload : fromJsonString(record.payloadJson, null),
     createdAt: record.createdAt
   };
 }
@@ -120,14 +182,15 @@ export async function listRecentRuns(limit = 10) {
   const client = await getPrisma();
   const rows = await client.run.findMany({
     orderBy: { createdAt: 'desc' },
-    take: limit
+    take: limit,
+    include: { events: { orderBy: { sequence: 'asc' } } }
   });
   return rows.map(mapRun);
 }
 
 export async function getRun(id) {
   const client = await getPrisma();
-  return mapRun(await client.run.findUnique({ where: { id } }));
+  return mapRun(await client.run.findUnique({ where: { id }, include: { events: { orderBy: { sequence: 'asc' } } } }));
 }
 
 export async function createSession({ title = 'New Session', goal = title, resumeId = null } = {}) {

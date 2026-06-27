@@ -8,9 +8,24 @@ import { rewriteArtifacts } from '../agents/writer.js';
 import { retrieveMemory, writeMemory } from './memoryManager.js';
 import { logger } from './logger.js';
 import { AgentRecoveryHardStopError, createRecoveryRuntime } from './agentRecovery.js';
+import { RUN_STATUS, createRunStateMachine, deriveFailureStatus } from './runStateMachine.js';
 
 function makeRuntimeId() {
   return `runtime_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function asPositiveInt(value, fallback) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+}
+
+function createRuntimeLimits() {
+  return {
+    maxSteps: asPositiveInt(process.env.AGENT_MAX_STEPS, 12),
+    maxToolCalls: asPositiveInt(process.env.AGENT_MAX_TOOL_CALLS, 20),
+    maxSameToolCalls: asPositiveInt(process.env.AGENT_MAX_SAME_TOOL_CALLS, 4),
+    timeoutMs: asPositiveInt(process.env.AGENT_TIMEOUT_MS, 120000)
+  };
 }
 
 export function summarizeLlmTrace(trace = []) {
@@ -161,6 +176,106 @@ export async function runAgentWorkflow({
 } = {}) {
   const runtimeRunId = makeRuntimeId();
   const startedAt = Date.now();
+  const limits = createRuntimeLimits();
+  const runEvents = [];
+  const toolCallCounts = new Map();
+  let eventSequence = 0;
+  let totalToolCalls = 0;
+
+  function recordRunEvent(type, payload = {}) {
+    const event = {
+      runtimeRunId,
+      sequence: ++eventSequence,
+      type,
+      agent: payload.agent || null,
+      status: payload.status || null,
+      latencyMs: Number.isFinite(payload.latencyMs) ? payload.latencyMs : null,
+      errorCode: payload.errorCode || null,
+      errorMessage: payload.errorMessage || null,
+      payload: payload.payload || null
+    };
+    runEvents.push(event);
+    return event;
+  }
+
+  const stateMachine = createRunStateMachine({
+    onTransition: ({ from, to, at, ...payload }) => {
+      recordRunEvent('run_transition', {
+        status: to,
+        payload: { from, to, at, ...payload }
+      });
+    }
+  });
+
+  function hardStop(code, message, payload = {}) {
+    const status = code === 'AGENT_TIMEOUT' ? RUN_STATUS.TIMEOUT : RUN_STATUS.HARD_STOPPED;
+    recordRunEvent('guard_hard_stop', {
+      agent: payload.agent || null,
+      status,
+      errorCode: code,
+      errorMessage: message,
+      payload: { limits, ...payload }
+    });
+    throw new AgentRecoveryHardStopError(message, {
+      code,
+      limits,
+      ...payload
+    });
+  }
+
+  function assertNotTimedOut(agent = null) {
+    const elapsedMs = Date.now() - startedAt;
+    if (elapsedMs > limits.timeoutMs) {
+      hardStop('AGENT_TIMEOUT', `Agent runtime timeout after ${elapsedMs}ms.`, { agent, elapsedMs });
+    }
+  }
+
+  function recordToolCall(agent) {
+    totalToolCalls += 1;
+    const nextSameCount = (toolCallCounts.get(agent) || 0) + 1;
+    toolCallCounts.set(agent, nextSameCount);
+    if (totalToolCalls > limits.maxToolCalls) {
+      hardStop('AGENT_MAX_TOOL_CALLS_EXCEEDED', `Agent runtime exceeded maxToolCalls=${limits.maxToolCalls}.`, {
+        agent,
+        totalToolCalls
+      });
+    }
+    if (nextSameCount > limits.maxSameToolCalls) {
+      hardStop('AGENT_MAX_SAME_TOOL_CALLS_EXCEEDED', `Agent runtime exceeded maxSameToolCalls=${limits.maxSameToolCalls} for ${agent}.`, {
+        agent,
+        sameToolCalls: nextSameCount
+      });
+    }
+  }
+
+  stateMachine.transition(RUN_STATUS.RUNNING, {
+    reason: 'agent_workflow_started',
+    goal,
+    hasAnswer: Boolean(answer),
+    executionPlanLength: executionPlan.length,
+    sessionId,
+    resumeId,
+    userId,
+    jobId,
+    vectorProvider,
+    limits
+  });
+
+  recordRunEvent('run_start', {
+    status: stateMachine.status,
+    payload: {
+      goal,
+      hasAnswer: Boolean(answer),
+      executionPlanLength: executionPlan.length,
+      sessionId,
+      resumeId,
+      userId,
+      jobId,
+      vectorProvider,
+      limits
+    }
+  });
+
   logger.info('agent_runtime.run.start', {
     runtimeRunId,
     goal,
@@ -170,10 +285,19 @@ export async function runAgentWorkflow({
     resumeId,
     userId,
     jobId,
-    vectorProvider
+    vectorProvider,
+    limits
   });
 
+  assertNotTimedOut();
   const memoryContext = await loadRuntimeMemory({ goal, userId, resumeId, sessionId, jobId });
+  recordRunEvent('memory_loaded', {
+    status: 'succeeded',
+    payload: {
+      total: memoryContext.items.length,
+      buckets: memoryContext.buckets
+    }
+  });
   logger.info('agent_runtime.memory.loaded', {
     runtimeRunId,
     total: memoryContext.items.length,
@@ -201,7 +325,14 @@ export async function runAgentWorkflow({
   const askedQuestions = sessionTurns.map((turn) => turn.question).filter(Boolean);
 
   async function runWorkflowStep(step) {
+    assertNotTimedOut(step.agent);
+    recordToolCall(step.agent);
     const stepStartedAt = Date.now();
+    recordRunEvent('step_start', {
+      agent: step.agent,
+      status: 'running',
+      payload: { order: step.order, text: step.text, totalToolCalls }
+    });
     logger.info('agent_runtime.step.start', {
       runtimeRunId,
       order: step.order,
@@ -220,12 +351,34 @@ export async function runAgentWorkflow({
       const result = await retrieveContext({ text: sourceText, query: goal, topK: 3, sessionTurns, resumeId });
       retrieved = result.retrieved;
       retrievalMeta = {
+        query: result.query,
+        topK: result.topK,
         resumeResults: result.resumeResults,
         historyResults: result.historyResults,
         kbSource: result.kbSource,
         resumeId: result.resumeId,
-        memoryResults: memoryContext.items.length
+        memoryResults: memoryContext.items.length,
+        vectorProvider
       };
+      recordRunEvent('rag_retrieval', {
+        agent: step.agent,
+        status: 'succeeded',
+        latencyMs: Date.now() - stepStartedAt,
+        payload: {
+          query: result.query,
+          topK: result.topK,
+          kbSource: result.kbSource,
+          resumeId: result.resumeId,
+          vectorProvider,
+          retrieved: result.retrieved.map((item) => ({
+            id: item.id,
+            source: item.source,
+            score: item.score,
+            pointId: item.pointId || null,
+            content: item.content
+          }))
+        }
+      });
       agentOutputs.push({ step, output: { retrieved, retrievalMeta, memoryContext } });
     } else if (step.agent === 'interviewer') {
       const result = await generateInterviewQuestions({ goal, retrieved, previousAnswer: answer, depth, askedQuestions });
@@ -248,10 +401,23 @@ export async function runAgentWorkflow({
       agent: step.agent,
       latencyMs: Date.now() - stepStartedAt
     });
+    recordRunEvent('step_success', {
+      agent: step.agent,
+      status: 'succeeded',
+      latencyMs: Date.now() - stepStartedAt,
+      payload: { order: step.order }
+    });
+    assertNotTimedOut(step.agent);
   }
 
   for (const step of executionPlan) {
     try {
+      if (executionPlan.length > limits.maxSteps) {
+        hardStop('AGENT_MAX_STEPS_EXCEEDED', `Agent runtime refused executionPlan length ${executionPlan.length}; maxSteps=${limits.maxSteps}.`, {
+          agent: step.agent,
+          executionPlanLength: executionPlan.length
+        });
+      }
       await recoveryRuntime.runStep({
         stepName: step.agent,
         args: { order: step.order, agent: step.agent, goal },
@@ -268,6 +434,29 @@ export async function runAgentWorkflow({
         details: error.details || null
       };
       const llmSummary = summarizeLlmTrace(llmTrace);
+      const terminalStatus = deriveFailureStatus(error);
+      if (!stateMachine.isTerminal()) {
+        stateMachine.transition(terminalStatus, {
+          reason: 'agent_workflow_failed',
+          errorCode: classifiedError.code,
+          stepName: step.agent
+        });
+      }
+      recordRunEvent('run_failed', {
+        agent: step.agent,
+        status: stateMachine.status,
+        errorCode: classifiedError.code,
+        errorMessage: classifiedError.message,
+        latencyMs: Date.now() - startedAt,
+        payload: {
+          stepName: step.agent,
+          llmSummary,
+          recovery,
+          limits,
+          totalToolCalls,
+          toolCallCounts: Object.fromEntries(toolCallCounts.entries())
+        }
+      });
 
       logger.info('agent_runtime.run.failed', {
         runtimeRunId,
@@ -279,7 +468,7 @@ export async function runAgentWorkflow({
 
       return {
         runtimeRunId,
-        status: error instanceof AgentRecoveryHardStopError ? 'hard_stopped' : 'failed',
+        status: stateMachine.status,
         error: classifiedError,
         agentOutputs,
         llmTrace,
@@ -294,6 +483,9 @@ export async function runAgentWorkflow({
         memoryContext,
         memoryWrite: null,
         recovery,
+        runEvents,
+        stateTransitions: stateMachine.transitions,
+        runtimeLimits: limits,
         vectorProvider
       };
     }
@@ -314,6 +506,26 @@ export async function runAgentWorkflow({
     llmSummary,
     memoryContext
   });
+  if (!stateMachine.isTerminal()) {
+    stateMachine.transition(RUN_STATUS.SUCCEEDED, {
+      reason: 'agent_workflow_completed',
+      outputSteps: agentOutputs.length,
+      totalToolCalls
+    });
+  }
+  recordRunEvent('run_success', {
+    status: stateMachine.status,
+    latencyMs: Date.now() - startedAt,
+    payload: {
+      outputSteps: agentOutputs.length,
+      llmSummary,
+      memoryWriteId: memoryWrite.memory?.id || null,
+      memoryWriteError: memoryWrite.error,
+      limits,
+      totalToolCalls,
+      toolCallCounts: Object.fromEntries(toolCallCounts.entries())
+    }
+  });
 
   logger.info('agent_runtime.run.success', {
     runtimeRunId,
@@ -326,7 +538,7 @@ export async function runAgentWorkflow({
 
   return {
     runtimeRunId,
-    status: 'succeeded',
+      status: stateMachine.status,
     error: null,
     agentOutputs,
     llmTrace,
@@ -341,6 +553,9 @@ export async function runAgentWorkflow({
     memoryContext,
     memoryWrite,
     recovery: recoveryRuntime.snapshot(),
+    runEvents,
+      stateTransitions: stateMachine.transitions,
+    runtimeLimits: limits,
     vectorProvider
   };
 }

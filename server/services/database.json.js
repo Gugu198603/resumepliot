@@ -20,6 +20,7 @@ function normalizeDb(db = {}) {
     sessions: Array.isArray(db.sessions) ? db.sessions : [],
     resumes: Array.isArray(db.resumes) ? db.resumes : [],
     runs: Array.isArray(db.runs) ? db.runs : [],
+    runEvents: Array.isArray(db.runEvents) ? db.runEvents : [],
     jobs: Array.isArray(db.jobs) ? db.jobs : [],
     jobMatches: Array.isArray(db.jobMatches) ? db.jobMatches : []
   };
@@ -72,9 +73,28 @@ export async function deleteResume(id) {
 
 export async function saveRunRecord(record) {
   const db = await readDb();
-  db.runs.push({ id: record.id || nowId('run'), createdAt: new Date().toISOString(), ...record });
+  const run = { id: record.id || nowId('run'), createdAt: new Date().toISOString(), ...record };
+  const events = Array.isArray(record.runEvents)
+    ? record.runEvents.map((event, index) => ({
+        id: event.id || nowId('runevent'),
+        runId: run.id,
+        runtimeRunId: event.runtimeRunId || record.runtimeRunId || null,
+        sequence: Number.isFinite(event.sequence) ? event.sequence : index + 1,
+        type: event.type || 'unknown',
+        agent: event.agent || null,
+        status: event.status || null,
+        latencyMs: Number.isFinite(event.latencyMs) ? event.latencyMs : null,
+        errorCode: event.errorCode || null,
+        errorMessage: event.errorMessage || null,
+        payload: event.payload || null,
+        createdAt: new Date().toISOString()
+      }))
+    : [];
+  run.runEvents = events;
+  db.runs.push(run);
+  db.runEvents.push(...events);
   await writeDb(db);
-  return db.runs[db.runs.length - 1];
+  return run;
 }
 
 export async function listRecentRuns(limit = 10) {
@@ -84,7 +104,10 @@ export async function listRecentRuns(limit = 10) {
 
 export async function getRun(id) {
   const db = await readDb();
-  return db.runs.find((item) => item.id === id) || null;
+  const run = db.runs.find((item) => item.id === id) || null;
+  if (!run) return null;
+  const runEvents = db.runEvents.filter((event) => event.runId === id).sort((a, b) => a.sequence - b.sequence);
+  return { ...run, runEvents: runEvents.length ? runEvents : (run.runEvents || []) };
 }
 
 export async function createSession({ title = 'New Session', goal = title, resumeId = null } = {}) {

@@ -28,6 +28,8 @@ export async function retrieveContext({ text, query, topK = 3, sessionTurns = []
     .slice(0, topK + 1);
 
   return {
+    query: fallbackQuery,
+    topK,
     kb: resumeKb,
     historyKb,
     retrieved: merged,

@@ -14,11 +14,19 @@ test('json database stores resumes, runs, sessions, and turns through one servic
   assert.equal((await db.getResume(resume.id)).chunks.length, 1);
 
   const session = await db.findOrCreateSessionByGoal('面试训练', { resumeId: resume.id });
-  const run = await db.saveRunRecord({ goal: '面试训练', resumeId: resume.id });
+  const run = await db.saveRunRecord({
+    goal: '面试训练',
+    resumeId: resume.id,
+    runEvents: [
+      { sequence: 1, type: 'run_start', status: 'running', payload: { goal: '面试训练' } },
+      { sequence: 2, type: 'run_success', status: 'succeeded', latencyMs: 10 }
+    ]
+  });
   const updated = await db.appendSessionTurn(session.id, { question: 'Q', answer: 'A', resumeId: resume.id }, run.id);
 
   assert.equal(updated.turns.length, 1);
   assert.equal(updated.runs[0], run.id);
+  assert.equal((await db.getRun(run.id)).runEvents.length, 2);
   assert.equal((await db.getDashboardSnapshot()).sessions.length, 1);
 });
 

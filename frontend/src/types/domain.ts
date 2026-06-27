@@ -138,8 +138,9 @@ export interface RecoverySnapshot {
 
 export interface Run {
   id: string;
-  status?: 'succeeded' | 'failed' | 'hard_stopped' | string;
+  status?: 'pending' | 'running' | 'succeeded' | 'failed' | 'timeout' | 'hard_stopped' | 'cancelled' | string;
   error?: RunError | null;
+  runtimeRunId?: string | null;
   goal?: string;
   skillId?: string | null;
   skill?: { id?: string; name?: string } | null;
@@ -152,7 +153,26 @@ export interface Run {
   llmTrace?: LlmTraceItem[];
   llmSummary?: LlmSummary;
   recovery?: RecoverySnapshot;
+  runEvents?: RunEvent[];
+  stateTransitions?: unknown[];
+  runtimeLimits?: unknown;
   createdAt: string;
+  updatedAt?: string;
+}
+
+export interface RunEvent {
+  id?: string;
+  runId?: string;
+  runtimeRunId?: string | null;
+  sequence?: number;
+  type?: string;
+  agent?: string | null;
+  status?: string | null;
+  latencyMs?: number | null;
+  errorCode?: string | null;
+  errorMessage?: string | null;
+  payload?: unknown;
+  createdAt?: string;
 }
 
 export interface Turn {
