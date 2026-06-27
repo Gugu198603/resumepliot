@@ -1,6 +1,9 @@
 const SECTION_HEADING_RE = /^(基本信息|个人信息|联系方式|求职意向|教育背景|校园经历|核心技能|个人技能|专业技能|技能栈|实习经历|工作经验|项目经历|项目经验|实践经历|荣誉奖项|奖项|证书|自我评价|求职简历|Education|Skills|Experience|Projects|Awards|Summary|Contact|Profile)$/i;
 const LEADING_BULLET_RE = /^[\s\u2022\u2023\u25e6\u2043\u2219\u25aa\u25ab\u25cf\u25a0\u25a1\u25ae\u25af\u25e7\uF000-\uF8FF•●▪■▮□◦‣⁃·\-–—]+/;
 const ENGLISH_STOPWORDS = new Set(['and', 'the', 'for', 'with', 'from', 'this', 'that', 'user', 'users', 'data']);
+const DECORATIVE_RESUME_RE = /^(PERSONAL\s*RESUME|PERSONALRESUME|求职简历|我一直在努力！)$/i;
+const PROJECT_SECTION_RE = /^(项目经历|项目经验|实践经历|Projects)$/i;
+const DATE_RANGE_RE = /(?:19|20)\d{2}(?:[./-]\d{1,2})?\s*[-–—]\s*(?:(?:19|20)\d{2}(?:[./-]\d{1,2})?|至今|Present)/i;
 
 function cleanLine(line = '') {
   return String(line)
@@ -27,7 +30,29 @@ function cleanSectionContent(content = []) {
   return content
     .map(cleanLine)
     .filter(Boolean)
-    .filter((line) => !/^(PERSONAL\s*RESUME|PERSONALRESUME|求职简历|我一直在努力！)$/i.test(line));
+    .filter((line) => !DECORATIVE_RESUME_RE.test(line));
+}
+
+function isProjectStart(line = '') {
+  return DATE_RANGE_RE.test(line) && /项目|系统|平台|应用|SDK|画布|协作|看板|Web前端|前端/i.test(line);
+}
+
+function repairTrailingSectionHeadings(lines = []) {
+  const repaired = [...lines];
+  for (let idx = repaired.length - 1; idx > 0; idx -= 1) {
+    const heading = repaired[idx];
+    if (!PROJECT_SECTION_RE.test(heading)) continue;
+    const hasContentAfterHeading = repaired.slice(idx + 1).some((line) => line && !SECTION_HEADING_RE.test(line));
+    if (hasContentAfterHeading) continue;
+
+    const projectStart = repaired.findIndex((line, lineIdx) => lineIdx < idx && isProjectStart(line));
+    if (projectStart < 0) continue;
+
+    repaired.splice(idx, 1);
+    repaired.splice(projectStart, 0, heading);
+    break;
+  }
+  return repaired;
 }
 
 function inferSectionTitle(content = [], fallbackTitle = '简历概览') {
@@ -49,7 +74,7 @@ function pushSection(sections, section) {
 }
 
 export function splitSections(text) {
-  const lines = text.split('\n').map(cleanLine).filter(Boolean);
+  const lines = repairTrailingSectionHeadings(text.split('\n').map(cleanLine).filter(Boolean));
   const sections = [];
   let current = { title: '未分类', content: [] };
 

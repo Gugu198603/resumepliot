@@ -104,6 +104,11 @@ export async function appendSessionTurn(sessionId, turn, runId) {
   return await provider.appendSessionTurn(sessionId, turn, runId);
 }
 
+export async function updateSessionTurns(sessionId, turns, runId) {
+  const provider = await getProvider();
+  return await provider.updateSessionTurns(sessionId, turns, runId);
+}
+
 export async function getDashboardSnapshot() {
   const provider = await getProvider();
   return await provider.getDashboardSnapshot();

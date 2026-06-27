@@ -58,6 +58,7 @@ export async function saveResumeRecord(record) {
   const client = await getPrisma();
   return await client.resume.create({
     data: {
+      ...(record.id ? { id: record.id } : {}),
       title: record.title || 'Imported Resume',
       originalText: record.text || '',
       parsedJson: toJsonString({
@@ -301,13 +302,13 @@ export async function findOrCreateSessionByGoal(goal, attrs = {}) {
 
 export async function listSessions() {
   const client = await getPrisma();
-  const rows = await client.session.findMany({ include: { messages: true, runs: true }, orderBy: { createdAt: 'desc' } });
+  const rows = await client.session.findMany({ include: { messages: { orderBy: { createdAt: 'asc' } }, runs: true }, orderBy: { createdAt: 'desc' } });
   return rows.map(mapSession);
 }
 
 export async function getSession(id) {
   const client = await getPrisma();
-  return mapSession(await client.session.findUnique({ where: { id }, include: { messages: true, runs: true } }));
+  return mapSession(await client.session.findUnique({ where: { id }, include: { messages: { orderBy: { createdAt: 'asc' } }, runs: true } }));
 }
 
 function mapSession(record) {
@@ -329,6 +330,32 @@ export async function appendSessionTurn(sessionId, turn, runId = null) {
     const current = await client.session.findUnique({ where: { id: sessionId } });
     if (current && !current.resumeId) {
       await client.session.update({ where: { id: sessionId }, data: { resumeId: turn.resumeId } });
+    }
+  }
+  return await getSession(sessionId);
+}
+
+export async function updateSessionTurns(sessionId, turns = [], runId = null) {
+  const client = await getPrisma();
+  await client.$transaction([
+    client.message.deleteMany({ where: { sessionId } }),
+    ...(Array.isArray(turns) && turns.length
+      ? [
+          client.message.createMany({
+            data: turns.map((turn) => ({
+              sessionId,
+              role: 'turn',
+              content: JSON.stringify(turn)
+            }))
+          })
+        ]
+      : [])
+  ]);
+  const resumeId = Array.isArray(turns) ? turns.find((turn) => turn.resumeId)?.resumeId : null;
+  if (resumeId) {
+    const current = await client.session.findUnique({ where: { id: sessionId } });
+    if (current && !current.resumeId) {
+      await client.session.update({ where: { id: sessionId }, data: { resumeId } });
     }
   }
   return await getSession(sessionId);

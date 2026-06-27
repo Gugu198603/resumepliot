@@ -23,6 +23,84 @@ import type {
 
 type Tab = 'workspace' | 'resumes' | 'runs' | 'sessions' | 'dashboard';
 type DisplayTab = 'overview' | 'resume' | 'generated' | 'retrieval' | 'agents' | 'history' | 'jd';
+type PreviewDensity = 'standard' | 'compact' | 'dense';
+type SpeechRecognitionResultEvent = Event & {
+  resultIndex: number;
+  results: ArrayLike<{
+    isFinal: boolean;
+    0: { transcript: string };
+  }>;
+};
+type SpeechRecognitionInstance = {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  onresult: ((event: SpeechRecognitionResultEvent) => void) | null;
+  onend: (() => void) | null;
+  onerror: (() => void) | null;
+  start: () => void;
+};
+
+const MAIN_NAV_ITEMS: Array<{ key: string; label: string; target: Tab; displayTab?: DisplayTab }> = [
+  { key: 'workbench', label: '工作台', target: 'workspace', displayTab: 'overview' },
+  { key: 'resumes', label: '我的简历', target: 'resumes' },
+  { key: 'sessions', label: '面试记录', target: 'sessions' },
+  { key: 'job-match', label: '岗位匹配', target: 'workspace', displayTab: 'jd' },
+  { key: 'diagnostics', label: '管理与诊断', target: 'dashboard' }
+];
+
+const WORKBENCH_TABS: Array<[DisplayTab, string]> = [
+  ['overview', '当前进度'],
+  ['resume', '当前简历'],
+  ['generated', '简历生成']
+];
+
+const WORKSPACE_STATE_KEY = 'resumepilot.workspaceState';
+const DEFAULT_GOAL = '请围绕项目经历生成可深挖的面试问题';
+const TAB_VALUES: Tab[] = ['workspace', 'resumes', 'runs', 'sessions', 'dashboard'];
+const DISPLAY_TAB_VALUES: DisplayTab[] = ['overview', 'resume', 'generated', 'retrieval', 'agents', 'history', 'jd'];
+
+interface PersistedWorkspaceState {
+  tab?: Tab;
+  displayTab?: DisplayTab;
+  resumeId?: string | null;
+  sessionId?: string | null;
+  runId?: string | null;
+  goal?: string;
+  answerDraft?: string;
+  jdText?: string;
+  jdUrl?: string;
+  selectedJobId?: string;
+  generationAdjustment?: string;
+}
+
+function readPersistedWorkspaceState(): PersistedWorkspaceState {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = window.localStorage.getItem(WORKSPACE_STATE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as PersistedWorkspaceState;
+    return {
+      ...parsed,
+      tab: parsed.tab && TAB_VALUES.includes(parsed.tab) ? parsed.tab : undefined,
+      displayTab: parsed.displayTab && DISPLAY_TAB_VALUES.includes(parsed.displayTab) ? parsed.displayTab : undefined
+    };
+  } catch {
+    return {};
+  }
+}
+
+function resumeToParseResult(resume: Resume): ParseResult {
+  return {
+    resumeId: resume.id,
+    text: resume.text || '',
+    sections: resume.sections || [],
+    risks: resume.risks || [],
+    kbSize: resume.kbSize || 0,
+    vectorProvider: resume.vectorProvider || 'memory',
+    chunks: resume.chunks || []
+  };
+}
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -40,11 +118,80 @@ function asTextList(value: unknown): string[] {
   return Array.isArray(value) ? value.map(asText).filter(Boolean) : [];
 }
 
+function normalizedText(value = '') {
+  return value.replace(/\s+/g, '').replace(/[。；;,.，、：:]/g, '');
+}
+
+function uniqueHighlights(value: unknown, lead = '') {
+  const leadKey = normalizedText(lead);
+  const seen = new Set<string>();
+  return asTextList(value).filter((line) => {
+    const key = normalizedText(line);
+    if (!key || (leadKey && key === leadKey) || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function periodOf(item: Record<string, unknown>) {
   return [asText(item.startDate), asText(item.endDate)].filter(Boolean).join(' - ');
 }
 
-function GeneratedResumeCard({ resume }: { resume: Record<string, unknown> }) {
+function updateArrayItem(resume: Record<string, unknown>, key: string, index: number, patch: Record<string, unknown>) {
+  const list = Array.isArray(resume[key]) ? [...resume[key] as Record<string, unknown>[]] : [];
+  list[index] = { ...asRecord(list[index]), ...patch };
+  return { ...resume, [key]: list };
+}
+
+function GeneratedResumeEditor({ resume, onChange }: { resume: Record<string, unknown>; onChange: (resume: Record<string, unknown>) => void }) {
+  const basics = asRecord(resume.basics);
+  const work = asRecordList(resume.work);
+  const projects = asRecordList(resume.projects);
+  const skills = asRecordList(resume.skills);
+
+  return (
+    <div className="generated-editor">
+      <div className="generated-editor-section">
+        <h5>基础信息</h5>
+        <label>姓名</label>
+        <input value={asText(basics.name)} onChange={(event) => onChange({ ...resume, basics: { ...basics, name: event.target.value } })} />
+        <label>定位</label>
+        <input value={asText(basics.label)} onChange={(event) => onChange({ ...resume, basics: { ...basics, label: event.target.value } })} />
+        <label>个人简介</label>
+        <textarea value={asText(basics.summary)} onChange={(event) => onChange({ ...resume, basics: { ...basics, summary: event.target.value } })} />
+      </div>
+      {skills.length ? (
+        <div className="generated-editor-section">
+          <h5>技能</h5>
+          {skills.map((item, index) => (
+            <div className="generated-editor-item" key={`skill-edit-${index}`}>
+              <label>{asText(item.name) || `技能 ${index + 1}`}</label>
+              <textarea value={asTextList(item.keywords).join('、')} onChange={(event) => onChange(updateArrayItem(resume, 'skills', index, { keywords: event.target.value.split(/[、,\n]/).map((line) => line.trim()).filter(Boolean) }))} placeholder="用顿号、逗号或换行分隔" />
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {work.map((item, index) => (
+        <div className="generated-editor-section" key={`work-edit-${index}`}>
+          <h5>工作经历 {index + 1}</h5>
+          <label>{[asText(item.name), asText(item.position)].filter(Boolean).join(' · ') || `工作经历 ${index + 1}`}</label>
+          <input value={asText(item.summary)} onChange={(event) => onChange(updateArrayItem(resume, 'work', index, { summary: event.target.value }))} placeholder="经历摘要" />
+          <textarea value={asTextList(item.highlights).join('\n')} onChange={(event) => onChange(updateArrayItem(resume, 'work', index, { highlights: event.target.value.split('\n').map((line) => line.trim()).filter(Boolean) }))} placeholder="每行一个要点" />
+        </div>
+      ))}
+      {projects.map((item, index) => (
+        <div className="generated-editor-section" key={`project-edit-${index}`}>
+          <h5>项目经历 {index + 1}</h5>
+          <label>{asText(item.name) || `项目经历 ${index + 1}`}</label>
+          <input value={asText(item.description)} onChange={(event) => onChange(updateArrayItem(resume, 'projects', index, { description: event.target.value }))} placeholder="项目摘要" />
+          <textarea value={asTextList(item.highlights).join('\n')} onChange={(event) => onChange(updateArrayItem(resume, 'projects', index, { highlights: event.target.value.split('\n').map((line) => line.trim()).filter(Boolean) }))} placeholder="每行一个要点" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function GeneratedResumeCard({ resume, density }: { resume: Record<string, unknown>; density: PreviewDensity }) {
   const basics = asRecord(resume.basics);
   const work = asRecordList(resume.work);
   const projects = asRecordList(resume.projects);
@@ -52,91 +199,90 @@ function GeneratedResumeCard({ resume }: { resume: Record<string, unknown> }) {
   const education = asRecordList(resume.education);
 
   return (
-    <div className="generated-resume-card">
-      <div className="generated-resume-head">
-        <div>
-          <h5>{asText(basics.name) || '未命名候选人'}</h5>
-          {asText(basics.label) ? <p>{asText(basics.label)}</p> : null}
-        </div>
-        <div className="generated-contact">
-          {[asText(basics.email), asText(basics.phone)].filter(Boolean).map((item) => <span key={item}>{item}</span>)}
-        </div>
-      </div>
-
-      {asText(basics.summary) ? (
-        <section className="generated-section">
-          <h6>个人简介</h6>
-          <p>{asText(basics.summary)}</p>
-        </section>
-      ) : null}
-
-      {work.length ? (
-        <section className="generated-section">
-          <h6>工作经历</h6>
-          {work.map((item, index) => (
-            <article className="generated-item" key={`${asText(item.name)}-${index}`}>
-              <div className="generated-item-title">
-                <strong>{[asText(item.name), asText(item.position)].filter(Boolean).join(' · ') || '未命名经历'}</strong>
-                {periodOf(item) ? <span>{periodOf(item)}</span> : null}
-              </div>
-              {asText(item.summary) ? <p>{asText(item.summary)}</p> : null}
-              {asTextList(item.highlights).length ? <ul>{asTextList(item.highlights).map((line, idx) => <li key={idx}>{line}</li>)}</ul> : null}
-            </article>
-          ))}
-        </section>
-      ) : null}
-
-      {projects.length ? (
-        <section className="generated-section">
-          <h6>项目经历</h6>
-          {projects.map((item, index) => (
-            <article className="generated-item" key={`${asText(item.name)}-${index}`}>
-              <div className="generated-item-title">
-                <strong>{asText(item.name) || '未命名项目'}</strong>
-                {periodOf(item) ? <span>{periodOf(item)}</span> : null}
-              </div>
-              {asText(item.description) ? <p>{asText(item.description)}</p> : null}
-              {asTextList(item.highlights).length ? <ul>{asTextList(item.highlights).map((line, idx) => <li key={idx}>{line}</li>)}</ul> : null}
-            </article>
-          ))}
-        </section>
-      ) : null}
-
-      {skills.length ? (
-        <section className="generated-section">
-          <h6>技能</h6>
-          <div className="generated-skill-list">
-            {skills.map((item, index) => (
-              <div className="generated-skill" key={`${asText(item.name)}-${index}`}>
-                <strong>{asText(item.name) || '技能'}</strong>
-                <div className="chip-wrap">{asTextList(item.keywords).map((keyword) => <span className="chip" key={keyword}>{keyword}</span>)}</div>
-              </div>
-            ))}
+    <div className={`generated-resume-pages density-${density}`}>
+      <div className="generated-resume-card">
+        <div className="generated-resume-head">
+          <div>
+            <h5>{asText(basics.name) || '未命名候选人'}</h5>
+            {asText(basics.label) ? <p>{asText(basics.label)}</p> : null}
           </div>
-        </section>
-      ) : null}
+          <div className="generated-contact">
+            {[asText(basics.email), asText(basics.phone)].filter(Boolean).map((item) => <span key={item}>{item}</span>)}
+          </div>
+        </div>
 
-      {education.length ? (
-        <section className="generated-section">
-          <h6>教育经历</h6>
-          {education.map((item, index) => (
-            <article className="generated-item" key={`${asText(item.institution)}-${index}`}>
-              <div className="generated-item-title">
-                <strong>{[asText(item.institution), asText(item.area), asText(item.studyType)].filter(Boolean).join(' · ') || '教育经历'}</strong>
-                {periodOf(item) ? <span>{periodOf(item)}</span> : null}
-              </div>
-            </article>
-          ))}
-        </section>
-      ) : null}
+        {asText(basics.summary) ? <section className="generated-section"><h6>个人简介</h6><p>{asText(basics.summary)}</p></section> : null}
+
+        {skills.length ? (
+          <section className="generated-section">
+            <h6>技能</h6>
+            <div className="generated-skill-list">
+              {skills.map((item, index) => (
+                <div className="generated-skill" key={`${asText(item.name)}-${index}`}>
+                  <strong>{asText(item.name) || '技能'}</strong>
+                  <div className="chip-wrap">{asTextList(item.keywords).map((keyword) => <span className="chip" key={keyword}>{keyword}</span>)}</div>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        {education.length ? (
+          <section className="generated-section">
+            <h6>教育经历</h6>
+            {education.map((item, index) => (
+              <article className="generated-item" key={`${asText(item.institution)}-${index}`}>
+                <div className="generated-item-title">
+                  <strong>{[asText(item.institution), asText(item.area), asText(item.studyType)].filter(Boolean).join(' · ') || '教育经历'}</strong>
+                  {periodOf(item) ? <span>{periodOf(item)}</span> : null}
+                </div>
+              </article>
+            ))}
+          </section>
+        ) : null}
+
+        {work.length ? (
+          <section className="generated-section">
+            <h6>工作经历</h6>
+            {work.map((item, index) => (
+              <article className="generated-item" key={`${asText(item.name)}-${index}`}>
+                <div className="generated-item-title">
+                  <strong>{[asText(item.name), asText(item.position)].filter(Boolean).join(' · ') || '未命名经历'}</strong>
+                  {periodOf(item) ? <span>{periodOf(item)}</span> : null}
+                </div>
+                {asText(item.summary) ? <p className="generated-summary">{asText(item.summary)}</p> : null}
+                {uniqueHighlights(item.highlights, asText(item.summary)).length ? <ul>{uniqueHighlights(item.highlights, asText(item.summary)).map((line, idx) => <li key={idx}>{line}</li>)}</ul> : null}
+              </article>
+            ))}
+          </section>
+        ) : null}
+
+        {projects.length ? (
+          <section className="generated-section">
+            <h6>项目经历</h6>
+            {projects.map((item, index) => (
+              <article className="generated-item" key={`${asText(item.name)}-${index}`}>
+                <div className="generated-item-title">
+                  <strong>{asText(item.name) || '未命名项目'}</strong>
+                  {periodOf(item) ? <span>{periodOf(item)}</span> : null}
+                </div>
+                {asText(item.description) ? <p className="generated-summary">{asText(item.description)}</p> : null}
+                {uniqueHighlights(item.highlights, asText(item.description)).length ? <ul>{uniqueHighlights(item.highlights, asText(item.description)).map((line, idx) => <li key={idx}>{line}</li>)}</ul> : null}
+              </article>
+            ))}
+          </section>
+        ) : null}
+      </div>
     </div>
   );
 }
 
 export default function App() {
+  const [persistedState] = useState(() => readPersistedWorkspaceState());
+  const [workspaceRestored, setWorkspaceRestored] = useState(false);
   const [resumeText, setResumeText] = useState('');
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
-  const [goal, setGoal] = useState('请围绕项目经历生成可深挖的面试问题');
+  const [goal, setGoal] = useState(persistedState.goal || DEFAULT_GOAL);
   const [executionPlan, setExecutionPlan] = useState<ExecutionStep[]>([]);
   const [agentOutputs, setAgentOutputs] = useState<AgentOutput[]>([]);
   const [loading, setLoading] = useState<string | null>(null);
@@ -151,21 +297,25 @@ export default function App() {
   const [qdrantReadiness, setQdrantReadiness] = useState<QdrantReadiness | null>(null);
   const [llmReadiness, setLlmReadiness] = useState<LlmReadiness | null>(null);
   const [llmMetrics, setLlmMetrics] = useState<LlmMetrics | null>(null);
-  const [tab, setTab] = useState<Tab>('workspace');
-  const [displayTab, setDisplayTab] = useState<DisplayTab>('overview');
+  const [tab, setTab] = useState<Tab>(persistedState.tab || 'workspace');
+  const [displayTab, setDisplayTab] = useState<DisplayTab>(persistedState.displayTab || 'overview');
   const [activeQuestion, setActiveQuestion] = useState('');
-  const [answerDraft, setAnswerDraft] = useState('');
+  const [answerDraft, setAnswerDraft] = useState(persistedState.answerDraft || '');
   const [retrievalPreview, setRetrievalPreview] = useState<RetrievedChunk[]>([]);
   const [activeCritique, setActiveCritique] = useState<string[]>([]);
   const [activeImproved, setActiveImproved] = useState('');
-  const [jdText, setJdText] = useState('');
+  const [jdText, setJdText] = useState(persistedState.jdText || '');
   const [jdResult, setJdResult] = useState<JdMatchResult | null>(null);
   const [jobMatches, setJobMatches] = useState<JobMatch[]>([]);
   const [jobs, setJobs] = useState<JobDescription[]>([]);
-  const [selectedJobId, setSelectedJobId] = useState<string>('');
-  const [jdUrl, setJdUrl] = useState('');
-  const [generationAdjustment, setGenerationAdjustment] = useState('');
+  const [selectedJobId, setSelectedJobId] = useState<string>(persistedState.selectedJobId || '');
+  const [jdUrl, setJdUrl] = useState(persistedState.jdUrl || '');
+  const [generationAdjustment, setGenerationAdjustment] = useState(persistedState.generationAdjustment || '');
   const [generationPreview, setGenerationPreview] = useState<ResumeGenerationPreview | null>(null);
+  const [previewDensity, setPreviewDensity] = useState<PreviewDensity>('compact');
+  const [isListening, setIsListening] = useState(false);
+  const [speechHint, setSpeechHint] = useState('');
+  const [importNotice, setImportNotice] = useState('');
 
   const agentCards = useMemo(() => {
     const map = new Map<string, unknown>();
@@ -181,16 +331,68 @@ export default function App() {
     ];
   }, [agentOutputs]);
 
+  const currentQuestion = useMemo(() => {
+    const turns = selectedSession?.turns || [];
+    const pendingTurn = [...turns].reverse().find((turn) => turn.question && !String(turn.answer || '').trim());
+    return pendingTurn?.question || activeQuestion || '';
+  }, [activeQuestion, selectedSession]);
+
+  const answeredTurns = useMemo(() => (selectedSession?.turns || []).filter((turn) => String(turn.answer || '').trim()).length, [selectedSession]);
+
+  function startVoiceAnswer() {
+    if (typeof window === 'undefined') return;
+    const SpeechRecognition = (window as typeof window & {
+      SpeechRecognition?: new () => SpeechRecognitionInstance;
+      webkitSpeechRecognition?: new () => SpeechRecognitionInstance;
+    }).SpeechRecognition || (window as typeof window & {
+      webkitSpeechRecognition?: new () => SpeechRecognitionInstance;
+    }).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setSpeechHint('当前浏览器不支持语音识别，请使用 Chrome 或 Edge。');
+      return;
+    }
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'zh-CN';
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.onresult = (event) => {
+      let finalText = '';
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        const transcript = event.results[index][0]?.transcript || '';
+        if (event.results[index].isFinal) finalText += transcript;
+      }
+      const text = finalText.trim();
+      if (text) setAnswerDraft((current) => `${current}${current.trim() ? '\n' : ''}${text}`);
+    };
+    recognition.onerror = () => {
+      setIsListening(false);
+      setSpeechHint('语音识别中断，请检查麦克风权限后重试。');
+    };
+    recognition.onend = () => setIsListening(false);
+    setSpeechHint('正在听你回答，结束后会自动填入回答框。');
+    setIsListening(true);
+    recognition.start();
+  }
+
   async function parseResume(file?: File) {
     setLoading('正在解析简历...');
+    setImportNotice('');
     const form = new FormData();
     if (file) form.append('resume', file);
     if (resumeText.trim()) form.append('text', resumeText);
     const res = await fetch('/api/parse', { method: 'POST', body: form });
     const data = await res.json();
+    if (!res.ok || data.error) {
+      setLoading(null);
+      setImportNotice(data.error || '简历解析失败，请换一个文件重试。');
+      return;
+    }
     setParseResult(data);
     setResumeText(data.text);
     setVectorProvider(data.vectorProvider || 'memory');
+    if (data.reusedExisting) {
+      setImportNotice('检测到这份简历已经导入过，已直接复用已有记录，没有新增重复简历。');
+    }
     setDisplayTab('resume');
     setLoading(null);
     loadResumes();
@@ -199,11 +401,11 @@ export default function App() {
 
   async function runAgents() {
     if (!resumeText.trim()) return;
-    setLoading('正在运行 workflow...');
+    setLoading('正在开始面试...');
     const res = await fetch('/api/agent-run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: resumeText, goal, answer: answerDraft, history: [], sessionId: selectedSession?.id || null, resumeId: parseResult?.resumeId || selectedSession?.resumeId || null })
+      body: JSON.stringify({ text: resumeText, goal, answer: '', history: [], sessionId: selectedSession?.id || null, resumeId: parseResult?.resumeId || selectedSession?.resumeId || null })
     });
     const data = await res.json();
     setExecutionPlan(data.executionPlan || []);
@@ -213,6 +415,7 @@ export default function App() {
     setRetrievalPreview(data.retrieved || []);
     setActiveCritique(data.critique?.feedback || []);
     setActiveImproved(data.rewrite?.improvedAnswer || '');
+    setDisplayTab('overview');
     setLoading(null);
     await loadRuns();
     await loadSessions();
@@ -223,7 +426,7 @@ export default function App() {
   }
 
   async function retryRun(run: Run) {
-    setLoading('正在手动重试 workflow...');
+    setLoading('正在重新执行面试流程...');
     const res = await fetch('/api/agent-run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -259,6 +462,7 @@ export default function App() {
     setActiveCritique(data.critique?.feedback || []);
     setActiveImproved(data.rewrite?.improvedAnswer || '');
     setAnswerDraft('');
+    setDisplayTab('overview');
     setLoading(null);
     await loadSessions();
     await loadDashboard();
@@ -300,6 +504,14 @@ export default function App() {
     setLoading(null);
   }
 
+  function updateGeneratedResume(resume: Record<string, unknown>) {
+    setGenerationPreview((prev) => prev ? { ...prev, resume } : prev);
+  }
+
+  function previewGeneratedPdf() {
+    window.print();
+  }
+
   function pickJob(jobId: string) {
     setSelectedJobId(jobId);
     const job = jobs.find((j) => j.id === jobId);
@@ -331,9 +543,21 @@ export default function App() {
   async function loadQdrantReadiness() { const res = await fetch('/api/qdrant-readiness'); setQdrantReadiness(await res.json()); }
   async function loadLlmReadiness() { const res = await fetch('/api/llm-readiness'); setLlmReadiness(await res.json()); }
   async function loadLlmMetrics() { const res = await fetch('/api/llm-metrics'); setLlmMetrics(await res.json()); }
-  async function openResume(id: string) { const res = await fetch(`/api/resumes/${id}`); const data = await res.json(); setSelectedResume(data.resume || null); }
+  async function openResume(id: string) {
+    const res = await fetch(`/api/resumes/${id}`);
+    const data = await res.json();
+    const resume = data.resume || null;
+    setSelectedResume(resume);
+    if (resume) {
+      setResumeText(resume.text || '');
+      setParseResult(resumeToParseResult(resume));
+      setVectorProvider(resume.vectorProvider || 'memory');
+    }
+  }
   async function handleCorrectionSaved(resume: Resume) {
     setSelectedResume(resume);
+    setResumeText(resume.text || '');
+    setParseResult(resumeToParseResult(resume));
     await loadResumes();
     await loadDashboard();
   }
@@ -349,12 +573,24 @@ export default function App() {
   async function deleteResume(id: string) {
     if (!window.confirm('确认删除这份简历？该操作不可撤销。')) return;
     await fetch(`/api/resumes/${id}`, { method: 'DELETE' });
-    if (selectedResume?.id === id) setSelectedResume(null);
+    if (selectedResume?.id === id || parseResult?.resumeId === id) {
+      setSelectedResume(null);
+      setParseResult(null);
+      setResumeText('');
+    }
     await loadResumes();
     await loadDashboard();
   }
   async function openRun(id: string) { const res = await fetch(`/api/runs/${id}`); const data = await res.json(); setSelectedRun(data.run || null); }
-  async function openSession(id: string) { const res = await fetch(`/api/sessions/${id}`); const data = await res.json(); setSelectedSession(data.session || null); }
+  async function openSession(id: string) {
+    const res = await fetch(`/api/sessions/${id}`);
+    const data = await res.json();
+    const session = data.session || null;
+    setSelectedSession(session);
+    if (session?.resumeId && session.resumeId !== parseResult?.resumeId) {
+      await openResume(session.resumeId);
+    }
+  }
 
   async function createSession() {
     const res = await fetch('/api/sessions', {
@@ -368,19 +604,84 @@ export default function App() {
     setTab('workspace');
   }
 
-  useEffect(() => { loadResumes(); loadRuns(); loadSessions(); loadDashboard(); loadQdrantReadiness(); loadLlmReadiness(); loadLlmMetrics(); loadJobMatches(); loadJobs(); }, []);
+  useEffect(() => {
+    let cancelled = false;
+
+    async function bootstrap() {
+      await Promise.all([
+        loadResumes(),
+        loadRuns(),
+        loadSessions(),
+        loadDashboard(),
+        loadQdrantReadiness(),
+        loadLlmReadiness(),
+        loadLlmMetrics(),
+        loadJobMatches(),
+        loadJobs()
+      ]);
+
+      if (cancelled) return;
+      try {
+        if (persistedState.resumeId) await openResume(persistedState.resumeId);
+        if (persistedState.sessionId) await openSession(persistedState.sessionId);
+        if (persistedState.runId) await openRun(persistedState.runId);
+      } finally {
+        if (!cancelled) setWorkspaceRestored(true);
+      }
+    }
+
+    bootstrap();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!workspaceRestored || typeof window === 'undefined') return;
+
+    const state: PersistedWorkspaceState = {
+      tab,
+      displayTab,
+      resumeId: parseResult?.resumeId || selectedResume?.id || selectedSession?.resumeId || null,
+      sessionId: selectedSession?.id || null,
+      runId: selectedRun?.id || null,
+      goal,
+      answerDraft,
+      jdText,
+      jdUrl,
+      selectedJobId,
+      generationAdjustment
+    };
+    window.localStorage.setItem(WORKSPACE_STATE_KEY, JSON.stringify(state));
+  }, [workspaceRestored, tab, displayTab, parseResult?.resumeId, selectedResume?.id, selectedSession?.id, selectedSession?.resumeId, selectedRun?.id, goal, answerDraft, jdText, jdUrl, selectedJobId, generationAdjustment]);
 
   return (
     <div className="page">
       <section className="card intro-card">
-        <div className="tab-row">{['workspace', 'resumes', 'runs', 'sessions', 'dashboard'].map((name) => <button key={name} className={tab === name ? 'tab active' : 'tab'} onClick={() => setTab(name as Tab)}>{name}</button>)}</div>
+        <div className="tab-row">
+          {MAIN_NAV_ITEMS.map((item) => {
+            const active = item.key === 'workbench'
+              ? tab === 'workspace' && displayTab !== 'jd'
+              : tab === item.target && (!item.displayTab || displayTab === item.displayTab);
+            return (
+              <button
+                key={item.key}
+                className={active ? 'tab active' : 'tab'}
+                onClick={() => {
+                  setTab(item.target);
+                  if (item.displayTab) setDisplayTab(item.displayTab);
+                }}
+              >
+                {item.label}
+              </button>
+            );
+          })}
+        </div>
       </section>
 
       {tab === 'workspace' && (
         <main className="workspace-shell">
           <aside className="card control-panel">
             <div className="panel-heading">
-              <p className="eyebrow">Control</p>
+              <p className="eyebrow">准备流程</p>
               <h2>操作台</h2>
               <p>先导入简历并设定目标，再开始一轮模拟面试；有回答后继续追问。</p>
             </div>
@@ -388,6 +689,7 @@ export default function App() {
             <div className="control-section">
               <div className="step-label"><span>1</span><strong>导入简历</strong></div>
               <label className="upload import-upload">{parseResult ? '重新上传 PDF / TXT' : '上传 PDF / TXT'}<input type="file" accept=".pdf,.txt" onChange={(e) => { const file = e.target.files?.[0]; if (file) parseResume(file); }} /></label>
+              {importNotice ? <small className="import-notice">{importNotice}</small> : null}
             </div>
 
             <div className="control-section">
@@ -397,19 +699,28 @@ export default function App() {
 
             <div className="control-section">
               <div className="step-label"><span>3</span><strong>回答当前问题</strong></div>
-              <textarea className="answer-input" value={answerDraft} onChange={(e) => setAnswerDraft(e.target.value)} placeholder="先点击“开始面试”生成问题；回答后点击“提交回答并继续追问”。" />
+              <div className={currentQuestion ? 'current-question-card active' : 'current-question-card'}>
+                <span>当前问题</span>
+                <p>{currentQuestion || '先点击“开始面试”，这里会显示第一道面试问题。'}</p>
+              </div>
+              <textarea className="answer-input" value={answerDraft} onChange={(e) => setAnswerDraft(e.target.value)} placeholder="在这里输入回答；也可以点击下方“语音回答”自动转文字。" />
+              <div className="answer-tools">
+                <button className="secondary-button voice-button" type="button" onClick={startVoiceAnswer} disabled={!currentQuestion || isListening}>
+                  {isListening ? '正在聆听...' : '语音回答'}
+                </button>
+                <button className="primary-action submit-answer-button" type="button" onClick={() => continueSession({ text: resumeText, answer: answerDraft })} disabled={!selectedSession || !currentQuestion || !answerDraft.trim()}>
+                  提交回答并继续追问
+                </button>
+                {speechHint ? <small>{speechHint}</small> : <small>回答完成后直接提交，系统会生成下一轮追问。</small>}
+              </div>
             </div>
 
             <div className="control-section">
-              <div className="step-label"><span>4</span><strong>执行动作</strong></div>
+              <div className="step-label"><span>4</span><strong>其他动作</strong></div>
               <div className="primary-actions">
                 <button className="action-button primary-action" onClick={runAgents} disabled={!resumeText.trim()}>
                   <strong>开始面试</strong>
                   <span>根据简历和目标生成第一轮问题</span>
-                </button>
-                <button className="action-button primary-action" onClick={() => continueSession({ text: resumeText, answer: answerDraft })} disabled={!selectedSession || !answerDraft.trim()}>
-                  <strong>提交回答并继续追问</strong>
-                  <span>基于当前回答生成下一轮问题</span>
                 </button>
                 <button className="action-button secondary-button" onClick={createSession} disabled={!goal.trim()}>
                   <strong>重开一场面试</strong>
@@ -423,7 +734,7 @@ export default function App() {
               {selectedSession ? (
                 <>
                   <strong>{selectedSession.title}</strong>
-                  <p>已进行 {(selectedSession.turns || []).length} 轮</p>
+                  <p>{currentQuestion ? `待回答：第 ${answeredTurns + 1} 题` : '当前没有待回答问题'} · 已回答 {answeredTurns} 轮</p>
                 </>
               ) : (
                 <p>还没有面试会话，点击“开始面试”或“重开一场面试”。</p>
@@ -434,15 +745,7 @@ export default function App() {
           <section className="display-panel">
             <div className="card display-tabs-card">
               <div className="display-tabs">
-                {[
-                  ['overview', '总览'],
-                  ['resume', '简历解析'],
-                  ['generated', '生成简历'],
-                  ['retrieval', '检索上下文'],
-                  ['agents', 'Agent Trace'],
-                  ['jd', 'JD 对比'],
-                  ['history', '历史记录']
-                ].map(([key, label]) => (
+                {WORKBENCH_TABS.map(([key, label]) => (
                   <button key={key} className={displayTab === key ? 'tab active' : 'tab'} onClick={() => setDisplayTab(key as DisplayTab)}>{label}</button>
                 ))}
               </div>
@@ -450,16 +753,28 @@ export default function App() {
               {displayTab === 'overview' && (
                 <div className="display-section">
                   <div className="overview-grid">
-                    <div className="detail-card"><span>执行计划</span><strong>{executionPlan.length ? `${executionPlan.length} steps` : '未运行'}</strong></div>
-                    <div className="detail-card"><span>Agent 输出</span><strong>{agentOutputs.length}</strong></div>
-                    <div className="detail-card"><span>检索片段</span><strong>{retrievalPreview.length}</strong></div>
-                    <div className="detail-card"><span>历史 Runs</span><strong>{runs.length}</strong></div>
+                    <div className="detail-card"><span>当前问题</span><strong>{currentQuestion ? `第 ${answeredTurns + 1} 题待回答` : '待生成'}</strong></div>
+                    <div className="detail-card"><span>本轮反馈</span><strong>{activeCritique.length ? `${activeCritique.length} 条` : '待生成'}</strong></div>
+                    <div className="detail-card"><span>参考材料</span><strong>{retrievalPreview.length}</strong></div>
+                    <div className="detail-card"><span>历史练习</span><strong>{sessions.length}</strong></div>
+                  </div>
+                  <div className={currentQuestion ? 'question-board active' : 'question-board'}>
+                    <span>面试官提问</span>
+                    <h3>{currentQuestion || '点击左侧“开始面试”后，第一道问题会显示在这里。'}</h3>
+                    <p>{currentQuestion ? '请在左侧回答框输入或语音回答，然后提交，系统会继续追问并给出反馈。' : '当前还没有待回答的问题。'}</p>
                   </div>
                   <div className="trace-row compact-trace">
-                    {agentCards.map((card) => (
-                      <div className={card.output ? 'trace-node active' : 'trace-node'} key={card.name}>
-                        <span>{card.name}</span>
-                        <small>{card.output ? 'active' : 'idle'}</small>
+                    {[
+                      ['选择简历', Boolean(parseResult?.resumeId || selectedSession?.resumeId || selectedResume?.id)],
+                      ['确认内容', Boolean(parseResult?.sections?.length || selectedResume?.sections?.length)],
+                      ['设定目标', Boolean(goal.trim())],
+                      ['生成问题', Boolean(currentQuestion)],
+                      ['查看反馈', Boolean(activeCritique.length || activeImproved)],
+                      ['生成简历', Boolean(generationPreview)]
+                    ].map(([label, active]) => (
+                      <div className={active ? 'trace-node active' : 'trace-node'} key={String(label)}>
+                        <span>{label}</span>
+                        <small>{active ? (label === '生成问题' ? '待回答' : '已就绪') : '待处理'}</small>
                       </div>
                     ))}
                   </div>
@@ -502,7 +817,7 @@ export default function App() {
                         </div>
                         <p>{item.content}</p>
                       </div>
-                    )) : <p className="empty">运行 workflow 或继续 session 后，这里会展示 resume + session history 的联合检索结果。</p>}
+                    )) : <p className="empty">开始面试或继续追问后，这里会展示系统参考过的简历和历史回答片段。</p>}
                   </div>
                 </div>
               )}
@@ -529,10 +844,41 @@ export default function App() {
                       <div className="generation-result">
                         <div className="generation-status-row">
                           <span className={generationPreview.ok ? 'chip ok' : 'chip danger'}>{generationPreview.ok ? '事实校验通过' : '预览被拦截'}</span>
-                          <span className="muted">Profile: {generationPreview.profile_validation?.ok ? 'ok' : 'needs review'} · Resume: {generationPreview.resume_validation?.ok ? 'ok' : 'needs review'}</span>
+                          <span className="muted">资料校验：{generationPreview.profile_validation?.ok ? '通过' : '需处理'} · 简历校验：{generationPreview.resume_validation?.ok ? '通过' : '需处理'}</span>
                         </div>
                         {generationPreview.resume ? (
-                          <GeneratedResumeCard resume={generationPreview.resume} />
+                          <div className="pdf-preview-shell">
+                            <div className="pdf-preview-head">
+                              <div>
+                                <strong>编辑生成结果</strong>
+                                <span>Skill 生成结构化 resume.json，这里渲染为紧凑 ATS 简历。</span>
+                              </div>
+                              <div className="pdf-preview-actions">
+                                <select value={previewDensity} onChange={(event) => setPreviewDensity(event.target.value as PreviewDensity)}>
+                                  <option value="standard">标准</option>
+                                  <option value="compact">紧凑</option>
+                                  <option value="dense">压缩</option>
+                                </select>
+                                <button className="secondary-button" onClick={previewGeneratedPdf}>浏览器 PDF 预览</button>
+                              </div>
+                            </div>
+                            <div className="generated-workspace">
+                              <div className="generated-edit-pane">
+                                <div className="pane-title">
+                                  <strong>内容编辑</strong>
+                                  <span>用于微调生成结果，不会覆盖原始简历。</span>
+                                </div>
+                                <GeneratedResumeEditor resume={generationPreview.resume} onChange={updateGeneratedResume} />
+                              </div>
+                              <div className="generated-preview-pane">
+                                <div className="pane-title">
+                                  <strong>PDF 预览</strong>
+                                  <span>真实分页以浏览器 PDF 预览为准。</span>
+                                </div>
+                                <GeneratedResumeCard resume={generationPreview.resume} density={previewDensity} />
+                              </div>
+                            </div>
+                          </div>
                         ) : null}
                         {[
                           ...(generationPreview.profile_validation?.issues || []),
@@ -659,18 +1005,6 @@ export default function App() {
                 </div>
               )}
 
-              {displayTab === 'history' && (
-                <div className="display-section history-grid">
-                  <div>
-                    <h4>最近 Runs</h4>
-                    <div className="risk-list">{runs.slice(0, 4).map((run) => <div className="risk-item" key={run.id}><strong>{run.goal || 'No goal'}</strong><p>{run.createdAt}</p></div>)}</div>
-                  </div>
-                  <div>
-                    <h4>Sessions</h4>
-                    <div className="risk-list">{sessions.slice(0, 4).map((session) => <div className="risk-item" key={session.id}><strong>{session.title}</strong><p>turns: {(session.turns || []).length}</p></div>)}</div>
-                  </div>
-                </div>
-              )}
             </div>
           </section>
         </main>
@@ -680,13 +1014,14 @@ export default function App() {
         <main className="grid grid-wide detail-layout">
           <section className="card">
             <div className="resume-list-head">
-              <h2>Resume 列表页</h2>
+              <h2>我的简历</h2>
             </div>
             <div className="risk-list">
               {resumes.length ? resumes.map((resume) => (
                 <div className="risk-item resume-item" key={resume.id}>
                   <strong>{resume.title || resume.id}</strong>
                   <p>{resume.createdAt}</p>
+                  {(resume.duplicateCount || 1) > 1 ? <span className="duplicate-badge">已合并 {resume.duplicateCount} 次重复导入</span> : null}
                   <p>{(resume.text || '').slice(0, 120)}...</p>
                   <div className="resume-item-actions">
                     <button onClick={() => openResume(resume.id)}>查看详情</button>
@@ -705,37 +1040,51 @@ export default function App() {
 
       {tab === 'runs' && (
         <main className="grid grid-wide detail-layout">
-          <section className="card"><h2>Runs 历史页</h2><div className="risk-list">{runs.length ? runs.map((run) => <div className="risk-item" key={run.id}><strong>{run.goal || 'No goal'}</strong><p>{run.createdAt}</p><p>{run.skill?.name || run.skillId || 'unknown skill'} · {run.status || 'succeeded'}</p><button onClick={() => openRun(run.id)}>查看详情</button></div>) : <p className="empty">还没有运行记录。</p>}</div></section>
+          <section className="card"><h2>运行诊断</h2><div className="risk-list">{runs.length ? runs.map((run) => <div className="risk-item" key={run.id}><strong>{run.goal || '未设置目标'}</strong><p>{run.createdAt}</p><p>{run.skill?.name || run.skillId || '未知能力'} · {run.status || '已完成'}</p><button onClick={() => openRun(run.id)}>查看详情</button></div>) : <p className="empty">还没有运行记录。</p>}</div></section>
           <section className="card tall"><RunDetailPanel run={selectedRun} onRetry={retryRun} /></section>
         </main>
       )}
 
       {tab === 'sessions' && (
         <main className="grid grid-wide detail-layout">
-          <section className="card"><h2>Session 结构页</h2><div className="risk-list">{sessions.length ? sessions.map((session) => <div className="risk-item" key={session.id}><strong>{session.title}</strong><p>{session.createdAt}</p><p>turns: {(session.turns || []).length}</p><button onClick={() => openSession(session.id)}>查看详情</button></div>) : <p className="empty">还没有 session 结构数据。</p>}</div></section>
-          <section className="card tall"><SessionDetailPanel session={selectedSession} resumeText={resumeText} onContinueSession={continueSession} /></section>
+          <section className="card"><h2>面试记录</h2><div className="risk-list">{sessions.length ? sessions.map((session) => <button className="risk-item resume-item clickable-card" key={session.id} onClick={() => openSession(session.id)}><strong>{session.title}</strong><p>{session.createdAt}</p><p>{(session.turns || []).length} 轮追问</p><span className="inline-action">查看详情</span></button>) : <p className="empty">还没有面试记录。</p>}</div></section>
+          <section className="card tall"><SessionDetailPanel session={selectedSession} resume={selectedResume || undefined} resumeText={resumeText} onContinueSession={continueSession} /></section>
         </main>
       )}
 
       {tab === 'dashboard' && (
         <main className="grid grid-wide detail-layout">
           <section className="card full">
-            <h2>Eval / Dashboard</h2>
+            <h2>管理与诊断</h2>
             {dashboard ? (
               <div className="detail-stack">
+                <div className="detail-block">
+                  <h4>运行记录</h4>
+                  <div className="risk-list">
+                    {runs.length ? runs.slice(0, 8).map((run) => (
+                      <div className="risk-item" key={run.id}>
+                        <strong>{run.goal || '未设置目标'}</strong>
+                        <p>{run.createdAt}</p>
+                        <p>{run.skill?.name || run.skillId || '未知能力'} · {run.status || '已完成'}</p>
+                        <button onClick={() => openRun(run.id)}>查看诊断</button>
+                      </div>
+                    )) : <p className="empty">还没有运行记录。</p>}
+                  </div>
+                </div>
+                {selectedRun ? <RunDetailPanel run={selectedRun} onRetry={retryRun} /> : null}
                 <div className="detail-grid two-col">
-                  <div className="detail-card"><span>Resumes</span><strong>{dashboard.overview?.resumes}</strong></div>
-                  <div className="detail-card"><span>Runs</span><strong>{dashboard.overview?.runs}</strong></div>
-                  <div className="detail-card"><span>Sessions</span><strong>{dashboard.overview?.sessions}</strong></div>
-                  <div className="detail-card"><span>Total Turns</span><strong>{dashboard.overview?.totalTurns}</strong></div>
-                  <div className="detail-card"><span>Avg Retrieval</span><strong>{dashboard.quality?.avgRetrievalScore}</strong></div>
-                  <div className="detail-card"><span>Avg Session Depth</span><strong>{dashboard.quality?.avgSessionDepth}</strong></div>
-                  <div className="detail-card"><span>Skill Routed Runs</span><strong>{dashboard.quality?.skillRoutedRuns}</strong></div>
-                  <div className="detail-card"><span>Risk Coverage</span><strong>{dashboard.quality?.riskCoverage}</strong></div>
-                  <div className="detail-card"><span>Avg Critique Length</span><strong>{dashboard.quality?.avgCritiqueLength}</strong></div>
-                  <div className="detail-card"><span>Improved Coverage</span><strong>{dashboard.quality?.improvedAnswerCoverage}</strong></div>
-                  <div className="detail-card"><span>Resume Retrieval Mix</span><strong>{dashboard.sourceMix?.resume}</strong></div>
-                  <div className="detail-card"><span>History Retrieval Mix</span><strong>{dashboard.sourceMix?.session_history}</strong></div>
+                  <div className="detail-card"><span>简历数</span><strong>{dashboard.overview?.resumes}</strong></div>
+                  <div className="detail-card"><span>运行次数</span><strong>{dashboard.overview?.runs}</strong></div>
+                  <div className="detail-card"><span>面试记录</span><strong>{dashboard.overview?.sessions}</strong></div>
+                  <div className="detail-card"><span>总追问轮次</span><strong>{dashboard.overview?.totalTurns}</strong></div>
+                  <div className="detail-card"><span>平均检索质量</span><strong>{dashboard.quality?.avgRetrievalScore}</strong></div>
+                  <div className="detail-card"><span>平均追问深度</span><strong>{dashboard.quality?.avgSessionDepth}</strong></div>
+                  <div className="detail-card"><span>能力路由次数</span><strong>{dashboard.quality?.skillRoutedRuns}</strong></div>
+                  <div className="detail-card"><span>风险覆盖率</span><strong>{dashboard.quality?.riskCoverage}</strong></div>
+                  <div className="detail-card"><span>平均反馈长度</span><strong>{dashboard.quality?.avgCritiqueLength}</strong></div>
+                  <div className="detail-card"><span>改进回答覆盖率</span><strong>{dashboard.quality?.improvedAnswerCoverage}</strong></div>
+                  <div className="detail-card"><span>简历参考占比</span><strong>{dashboard.sourceMix?.resume}</strong></div>
+                  <div className="detail-card"><span>历史回答参考占比</span><strong>{dashboard.sourceMix?.session_history}</strong></div>
                 </div>
                 <div className="detail-block">
                   <h4>人工纠偏统计</h4>
@@ -753,13 +1102,13 @@ export default function App() {
                   </div>
                 </div>
                 <div className="detail-block">
-                  <h4>Qdrant Readiness</h4>
+                  <h4>向量库状态</h4>
                   {qdrantReadiness ? (
                     <div className="detail-grid two-col">
-                      <div className="detail-card"><span>Provider</span><strong>{qdrantReadiness.provider}</strong></div>
-                      <div className="detail-card"><span>Configured</span><strong>{String(qdrantReadiness.configured)}</strong></div>
-                      <div className="detail-card"><span>Service Reachable</span><strong>{String(qdrantReadiness.serviceReachable)}</strong></div>
-                      <div className="detail-card"><span>Collection Reachable</span><strong>{String(qdrantReadiness.collectionReachable)}</strong></div>
+                      <div className="detail-card"><span>服务类型</span><strong>{qdrantReadiness.provider}</strong></div>
+                      <div className="detail-card"><span>配置完成</span><strong>{String(qdrantReadiness.configured)}</strong></div>
+                      <div className="detail-card"><span>服务可访问</span><strong>{String(qdrantReadiness.serviceReachable)}</strong></div>
+                      <div className="detail-card"><span>集合可访问</span><strong>{String(qdrantReadiness.collectionReachable)}</strong></div>
                       <div className="detail-card"><span>QDRANT_URL</span><strong>{qdrantReadiness.env?.QDRANT_URL || 'not_set'}</strong></div>
                       <div className="detail-card"><span>Collection</span><strong>{qdrantReadiness.env?.QDRANT_COLLECTION}</strong></div>
                     </div>
@@ -767,34 +1116,34 @@ export default function App() {
                   {qdrantReadiness?.notes?.length ? <ul>{qdrantReadiness.notes.map((note: string) => <li key={note}>{note}</li>)}</ul> : null}
                 </div>
                 <div className="detail-block">
-                  <h4>LLM Readiness</h4>
+                  <h4>模型服务状态</h4>
                   {llmReadiness ? (
                     <div className="detail-grid two-col">
-                      <div className="detail-card"><span>Mode</span><strong>{llmReadiness.mode}</strong></div>
-                      <div className="detail-card"><span>Configured</span><strong>{String(llmReadiness.configured)}</strong></div>
-                      <div className="detail-card"><span>Model</span><strong>{llmReadiness.model}</strong></div>
-                      <div className="detail-card"><span>Base URL</span><strong>{llmReadiness.baseUrl}</strong></div>
+                      <div className="detail-card"><span>运行模式</span><strong>{llmReadiness.mode}</strong></div>
+                      <div className="detail-card"><span>配置完成</span><strong>{String(llmReadiness.configured)}</strong></div>
+                      <div className="detail-card"><span>模型</span><strong>{llmReadiness.model}</strong></div>
+                      <div className="detail-card"><span>服务地址</span><strong>{llmReadiness.baseUrl}</strong></div>
                     </div>
                   ) : <p className="empty">加载中...</p>}
                   {llmReadiness?.notes?.length ? <ul>{llmReadiness.notes.map((note: string) => <li key={note}>{note}</li>)}</ul> : null}
                 </div>
                 <div className="detail-block">
-                  <h4>LLM Cost & Latency</h4>
+                  <h4>模型成本与延迟</h4>
                   {llmMetrics ? (
                     <>
                       <div className="detail-grid two-col">
-                        <div className="detail-card"><span>Runs (with LLM)</span><strong>{llmMetrics.overview.runs} / {llmMetrics.overview.runsWithLlm}</strong></div>
-                        <div className="detail-card"><span>LLM Calls</span><strong>{llmMetrics.overview.calls}</strong></div>
-                        <div className="detail-card"><span>Live / Fallback</span><strong>{llmMetrics.overview.liveCalls} / {llmMetrics.overview.fallbackCalls}</strong></div>
-                        <div className="detail-card"><span>Errors</span><strong>{llmMetrics.overview.errorCalls}</strong></div>
-                        <div className="detail-card"><span>Total Latency</span><strong>{llmMetrics.overview.totalLatencyMs} ms</strong></div>
-                        <div className="detail-card"><span>Avg Latency</span><strong>{llmMetrics.overview.avgLatencyMs} ms</strong></div>
-                        <div className="detail-card"><span>Total Tokens</span><strong>{llmMetrics.overview.totalTokens}</strong></div>
-                        <div className="detail-card"><span>Est. Cost</span><strong>${llmMetrics.overview.costUsd.toFixed(4)}</strong></div>
-                        <div className="detail-card"><span>Latest Run</span><strong>{llmMetrics.overview.latestRunAt || '—'}</strong></div>
+                        <div className="detail-card"><span>运行 / 模型运行</span><strong>{llmMetrics.overview.runs} / {llmMetrics.overview.runsWithLlm}</strong></div>
+                        <div className="detail-card"><span>调用次数</span><strong>{llmMetrics.overview.calls}</strong></div>
+                        <div className="detail-card"><span>真实调用 / 兜底</span><strong>{llmMetrics.overview.liveCalls} / {llmMetrics.overview.fallbackCalls}</strong></div>
+                        <div className="detail-card"><span>错误次数</span><strong>{llmMetrics.overview.errorCalls}</strong></div>
+                        <div className="detail-card"><span>总延迟</span><strong>{llmMetrics.overview.totalLatencyMs} ms</strong></div>
+                        <div className="detail-card"><span>平均延迟</span><strong>{llmMetrics.overview.avgLatencyMs} ms</strong></div>
+                        <div className="detail-card"><span>Token 总量</span><strong>{llmMetrics.overview.totalTokens}</strong></div>
+                        <div className="detail-card"><span>预估成本</span><strong>${llmMetrics.overview.costUsd.toFixed(4)}</strong></div>
+                        <div className="detail-card"><span>最近运行</span><strong>{llmMetrics.overview.latestRunAt || '—'}</strong></div>
                       </div>
                       {llmMetrics.overview.calls === 0 ? (
-                        <p className="empty">还没有采集到 LLM 调用（fallback 模式不产生 token/成本）。配置 OPENAI_API_KEY 并运行 workflow 后即可看到成本与延迟聚合。</p>
+                        <p className="empty">还没有采集到模型调用（兜底模式不产生 token/成本）。配置 OPENAI_API_KEY 并开始一次面试后即可看到成本与延迟聚合。</p>
                       ) : (
                         <>
                           <h5>按模型</h5>
@@ -815,7 +1164,7 @@ export default function App() {
                               ))}
                             </tbody>
                           </table>
-                          <h5>按 Agent</h5>
+                          <h5>按执行角色</h5>
                           <table className="llm-metric-table">
                             <thead>
                               <tr><th>Agent</th><th>Calls</th><th>Errors</th><th>Tokens</th><th>Total ms</th><th>Cost</th></tr>
@@ -840,15 +1189,15 @@ export default function App() {
                   ) : <p className="empty">加载中...</p>}
                 </div>
                 <div className="detail-block">
-                  <h4>Eval Notes</h4>
+                  <h4>质量评估备注</h4>
                   <ul>{(dashboard.evalNotes || []).map((note: string) => <li key={note}>{note}</li>)}</ul>
                 </div>
                 <div className="detail-block">
-                  <h4>Session Trend</h4>
-                  <div className="risk-list">{(dashboard.trend || []).map((item) => <div className="risk-item" key={item.title + item.createdAt}><strong>{item.title}</strong><p>{item.createdAt}</p><p>turns: {item.turns}</p></div>)}</div>
+                  <h4>面试趋势</h4>
+                  <div className="risk-list">{(dashboard.trend || []).map((item) => <div className="risk-item" key={item.title + item.createdAt}><strong>{item.title}</strong><p>{item.createdAt}</p><p>{item.turns} 轮追问</p></div>)}</div>
                 </div>
                 <div className="detail-block">
-                  <h4>Retrieval Samples</h4>
+                  <h4>检索样本</h4>
                   <div className="risk-list">{(dashboard.retrievalSamples || []).map((sample, idx) => <div className="risk-item" key={idx}><strong>{sample.session}</strong><p>{sample.question}</p><ul>{(sample.retrieved || []).map((r, i) => <li key={i}>[{r.source || 'resume'}] score={r.score} {String(r.content || '').slice(0, 100)}...</li>)}</ul></div>)}</div>
                 </div>
               </div>

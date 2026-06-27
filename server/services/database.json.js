@@ -220,6 +220,20 @@ export async function appendSessionTurn(sessionId, turn, runId = null) {
   return session;
 }
 
+export async function updateSessionTurns(sessionId, turns = [], runId = null) {
+  const db = await readDb();
+  const session = db.sessions.find((item) => item.id === sessionId);
+  if (!session) return null;
+  session.turns = Array.isArray(turns) ? turns : [];
+  session.runs = Array.isArray(session.runs) ? session.runs : [];
+  if (runId && !session.runs.includes(runId)) session.runs.push(runId);
+  const resumeId = session.turns.find((turn) => turn.resumeId)?.resumeId;
+  if (resumeId && !session.resumeId) session.resumeId = resumeId;
+  session.updatedAt = new Date().toISOString();
+  await writeDb(db);
+  return session;
+}
+
 export async function getDashboardSnapshot() {
   return await readDb();
 }

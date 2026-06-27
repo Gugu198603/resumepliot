@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { createHash } from 'crypto';
 import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
@@ -31,6 +32,7 @@ import {
   listSessions,
   getSession,
   appendSessionTurn,
+  updateSessionTurns,
   getDashboardSnapshot,
   saveJobDescription,
   listJobDescriptions,
@@ -79,6 +81,34 @@ function summarizeLlmTrace(trace = []) {
 function stripChunkForResponse(chunk) {
   const { embedding, ...safeChunk } = chunk;
   return safeChunk;
+}
+
+function resumeFingerprint(text = '') {
+  const canonical = String(text || '')
+    .replace(/\s+/g, '')
+    .replace(/[，。；：、,. ;:]/g, '')
+    .trim()
+    .toLowerCase();
+  return canonical ? createHash('sha256').update(canonical).digest('hex') : '';
+}
+
+function mergeDuplicateResumes(resumes = []) {
+  const grouped = new Map();
+  for (const resume of resumes) {
+    const key = resumeFingerprint(resume.text || '');
+    if (!key) {
+      grouped.set(resume.id, { ...resume, duplicateCount: 1, duplicateIds: [resume.id] });
+      continue;
+    }
+    const existing = grouped.get(key);
+    if (!existing) {
+      grouped.set(key, { ...resume, duplicateCount: 1, duplicateIds: [resume.id] });
+      continue;
+    }
+    existing.duplicateCount += 1;
+    existing.duplicateIds.push(resume.id);
+  }
+  return [...grouped.values()];
 }
 
 async function getQdrantReadiness() {
@@ -271,7 +301,10 @@ app.post('/api/rag-eval', async (req, res) => {
   }
 });
 app.get('/api/runs/:id', async (req, res) => { const run = await getRun(req.params.id); if (!run) return res.status(404).json({ error: 'Run not found' }); res.json({ run }); });
-app.get('/api/resumes', async (_, res) => { res.json({ resumes: await listResumes() }); });
+app.get('/api/resumes', async (_, res) => {
+  const resumes = await listResumes();
+  res.json({ resumes: mergeDuplicateResumes(resumes) });
+});
 app.post('/api/resumes/compare', async (req, res) => {
   try {
     const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter(Boolean) : [];
@@ -400,21 +433,27 @@ app.post('/api/sessions/:id/continue', async (req, res) => {
     const session = await getSession(req.params.id);
     if (!session) return res.status(404).json({ error: 'Session not found' });
     const { text = '', answer = '', resumeId = session.resumeId || null } = req.body || {};
+    if (!String(answer || '').trim()) return res.status(400).json({ error: 'answer is required' });
     const turns = session.turns || [];
     const lastTurn = turns[turns.length - 1] || null;
-    const depth = turns.length;
+    const depth = turns.filter((turn) => String(turn.answer || '').trim()).length;
     const askedQuestions = turns.map((t) => t.question).filter(Boolean);
     const memoryContext = await loadRuntimeMemory({ goal: session.goal || session.title || '', resumeId, sessionId: session.id });
     const retrieval = await retrieveContext({ text, query: session.goal || session.title || '', topK: 3, sessionTurns: turns, resumeId });
     const retrieved = retrieval.retrieved;
-    const interview = await generateInterviewQuestions({ goal: session.goal || session.title || '', retrieved, previousAnswer: answer, previousQuestion: lastTurn?.question || '', depth, askedQuestions, memoryContext });
+    const currentQuestion = lastTurn?.question || session.goal || session.title || '请介绍你的经历。';
+    const critique = await critiqueAnswer({ answer, retrieved, question: currentQuestion, memoryContext });
+    const rewrite = await rewriteArtifacts({ text, answer, feedback: critique?.feedback || [], memoryContext });
+    const answeredTurn = lastTurn
+      ? { ...lastTurn, answer, critique: critique?.feedback || [], improvedAnswer: rewrite?.improvedAnswer || '', retrieved, resumeId, depth }
+      : { id: makeId('turn'), question: currentQuestion, answer, critique: critique?.feedback || [], improvedAnswer: rewrite?.improvedAnswer || '', retrieved, resumeId, depth };
+    const answeredTurns = lastTurn ? [...turns.slice(0, -1), answeredTurn] : [answeredTurn];
+    const interview = await generateInterviewQuestions({ goal: session.goal || session.title || '', retrieved, previousAnswer: answer, previousQuestion: currentQuestion, depth: depth + 1, askedQuestions, memoryContext });
     const questions = interview.questions;
     const question = questions?.detail?.[0] || questions?.basic?.[0] || '请继续介绍你的经历。';
-    const critique = await critiqueAnswer({ answer, retrieved, question, memoryContext });
-    const rewrite = await rewriteArtifacts({ text, answer, feedback: critique?.feedback || [], memoryContext });
-    const turn = { id: makeId('turn'), question, answer, critique: critique?.feedback || [], improvedAnswer: rewrite?.improvedAnswer || '', retrieved, resumeId, depth, stage: interview.stage };
-    const updatedSession = await appendSessionTurn(session.id, turn);
-    res.json({ session: updatedSession, turn, critique, rewrite, questions, depth, stage: interview.stage, retrieved, memoryContext, retrievalMeta: { resumeResults: retrieval.resumeResults, historyResults: retrieval.historyResults, kbSource: retrieval.kbSource, resumeId: retrieval.resumeId } });
+    const nextTurn = { id: makeId('turn'), question, answer: '', critique: [], improvedAnswer: '', retrieved: [], resumeId, depth: depth + 1, stage: interview.stage };
+    const updatedSession = await updateSessionTurns(session.id, [...answeredTurns, nextTurn]);
+    res.json({ session: updatedSession, turn: nextTurn, answeredTurn, critique, rewrite, questions, depth: depth + 1, stage: interview.stage, retrieved, memoryContext, retrievalMeta: { resumeResults: retrieval.resumeResults, historyResults: retrieval.historyResults, kbSource: retrieval.kbSource, resumeId: retrieval.resumeId } });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -443,13 +482,30 @@ app.post('/api/parse', upload.single('resume'), async (req, res) => {
       }
     }
     text = normalizeText(text);
+    const fingerprint = resumeFingerprint(text);
+    const duplicate = fingerprint
+      ? (await listResumes()).find((resume) => resumeFingerprint(resume.text || '') === fingerprint)
+      : null;
+    if (duplicate) {
+      return res.json({
+        resumeId: duplicate.id,
+        text: duplicate.text || '',
+        sections: duplicate.sections || [],
+        risks: duplicate.risks || [],
+        kbSize: duplicate.kbSize || 0,
+        chunks: (duplicate.chunks || []).map(stripChunkForResponse),
+        vectorProvider: duplicate.vectorProvider || vectorProvider,
+        duplicateOf: duplicate.id,
+        reusedExisting: true
+      });
+    }
     const sections = splitSections(text);
     const risks = detectRisks(text);
     const resumeId = makeId('resume');
     const kb = await buildKnowledgeBase(text, resumeId);
     const chunks = kb.map((chunk) => ({ ...chunk, resumeId }));
     const record = await saveResumeRecord({ id: resumeId, text, sections, risks, kbSize: kb.length, chunks, vectorProvider });
-    res.json({ resumeId: record.id, text, sections, risks, kbSize: kb.length, chunks: chunks.map(stripChunkForResponse), vectorProvider });
+    res.json({ resumeId: record.id, text, sections, risks, kbSize: kb.length, chunks: chunks.map(stripChunkForResponse), vectorProvider, reusedExisting: false });
   } catch (error) {
     console.error('[parse]', error);
     res.status(500).json({ error: error.message, stack: error.stack });

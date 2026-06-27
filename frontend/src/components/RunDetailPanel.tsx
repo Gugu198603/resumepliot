@@ -12,14 +12,14 @@ export default function RunDetailPanel({ run, onRetry }: { run: Run | null; onRe
   return (
     <div className="detail-stack">
       <div className="detail-header">
-        <h3>Run Detail</h3>
+        <h3>运行诊断</h3>
         <p>{run.createdAt}</p>
       </div>
       {run.status && run.status !== 'succeeded' ? (
         <div className={hardStopped ? 'recovery-banner hard-stop' : 'recovery-banner'}>
           <div>
-            <span className="chip danger">{hardStopped ? 'Hard Stop' : run.status}</span>
-            <h4>{run.error?.message || 'Agent 执行未完成'}</h4>
+            <span className="chip danger">{hardStopped ? '已强制停止' : run.status}</span>
+            <h4>{run.error?.message || '执行未完成'}</h4>
             <p>
               {hardStopped
                 ? '系统已停止自动恢复，避免重复错误继续消耗 token。你可以确认上下文后手动重试。'
@@ -31,22 +31,22 @@ export default function RunDetailPanel({ run, onRetry }: { run: Run | null; onRe
         </div>
       ) : null}
       <div className="detail-grid two-col">
-        <div className="detail-card"><span>Status</span><strong>{run.status || 'succeeded'}</strong></div>
-        <div className="detail-card"><span>Goal</span><strong>{run.goal || '-'}</strong></div>
-        <div className="detail-card"><span>Skill</span><strong>{run.skill?.name || run.skillId || '-'}</strong></div>
-        <div className="detail-card"><span>Vector</span><strong>{run.vectorProvider || '-'}</strong></div>
-        <div className="detail-card"><span>Answer</span><strong>{run.hasAnswer ? 'Yes' : 'No'}</strong></div>
+        <div className="detail-card"><span>状态</span><strong>{run.status || 'succeeded'}</strong></div>
+        <div className="detail-card"><span>目标</span><strong>{run.goal || '-'}</strong></div>
+        <div className="detail-card"><span>调用能力</span><strong>{run.skill?.name || run.skillId || '-'}</strong></div>
+        <div className="detail-card"><span>检索来源</span><strong>{run.vectorProvider || '-'}</strong></div>
+        <div className="detail-card"><span>是否有回答</span><strong>{run.hasAnswer ? '是' : '否'}</strong></div>
       </div>
       {summary && (
         <div className="detail-block">
-          <h4>LLM Summary</h4>
+          <h4>模型调用概览</h4>
           <div className="detail-grid two-col">
-            <div className="detail-card"><span>Mode</span><strong>{summary.mode}</strong></div>
-            <div className="detail-card"><span>Calls</span><strong>{summary.calls}（live {summary.liveCalls} / fallback {summary.fallbackCalls}）</strong></div>
-            <div className="detail-card"><span>Total Latency</span><strong>{summary.totalLatencyMs} ms</strong></div>
-            <div className="detail-card"><span>Avg Latency</span><strong>{summary.avgLatencyMs} ms</strong></div>
-            <div className="detail-card"><span>Total Tokens</span><strong>{summary.totalTokens}</strong></div>
-            <div className="detail-card"><span>Models</span><strong>{summary.models.length ? summary.models.join(', ') : '-'}</strong></div>
+            <div className="detail-card"><span>模式</span><strong>{summary.mode}</strong></div>
+            <div className="detail-card"><span>调用次数</span><strong>{summary.calls}（真实 {summary.liveCalls} / 兜底 {summary.fallbackCalls}）</strong></div>
+            <div className="detail-card"><span>总延迟</span><strong>{summary.totalLatencyMs} ms</strong></div>
+            <div className="detail-card"><span>平均延迟</span><strong>{summary.avgLatencyMs} ms</strong></div>
+            <div className="detail-card"><span>Token 总量</span><strong>{summary.totalTokens}</strong></div>
+            <div className="detail-card"><span>模型</span><strong>{summary.models.length ? summary.models.join(', ') : '-'}</strong></div>
           </div>
           {summary.errors?.length ? (
             <ul className="risk-list">
@@ -57,7 +57,7 @@ export default function RunDetailPanel({ run, onRetry }: { run: Run | null; onRe
       )}
       {trace.length ? (
         <div className="detail-block">
-          <h4>LLM Trace</h4>
+          <h4>模型调用明细</h4>
           <ol className="timeline-list">
             {trace.map((item, idx) => (
               <li key={idx}>
@@ -73,12 +73,12 @@ export default function RunDetailPanel({ run, onRetry }: { run: Run | null; onRe
       ) : null}
       {recovery ? (
         <div className="detail-block">
-          <h4>Recovery Guard</h4>
+          <h4>自动恢复保护</h4>
           <div className="detail-grid two-col">
-            <div className="detail-card"><span>Recovery Tokens</span><strong>{recovery.budget?.usedTokens || 0} / {recovery.budget?.maxRecoveryTokens || 0}</strong></div>
-            <div className="detail-card"><span>Estimated Cost</span><strong>${recovery.budget?.estimatedCostUsd || 0} / ${recovery.budget?.maxRecoveryCostUsd || 0}</strong></div>
-            <div className="detail-card"><span>Error Fingerprints</span><strong>{recovery.fingerprints?.length || 0}</strong></div>
-            <div className="detail-card"><span>Recovery Events</span><strong>{recoveryEvents.length}</strong></div>
+            <div className="detail-card"><span>恢复 Token</span><strong>{recovery.budget?.usedTokens || 0} / {recovery.budget?.maxRecoveryTokens || 0}</strong></div>
+            <div className="detail-card"><span>预估成本</span><strong>${recovery.budget?.estimatedCostUsd || 0} / ${recovery.budget?.maxRecoveryCostUsd || 0}</strong></div>
+            <div className="detail-card"><span>错误指纹</span><strong>{recovery.fingerprints?.length || 0}</strong></div>
+            <div className="detail-card"><span>恢复事件</span><strong>{recoveryEvents.length}</strong></div>
           </div>
           {recovery.fingerprints?.length ? (
             <div className="fingerprint-list">
@@ -107,17 +107,17 @@ export default function RunDetailPanel({ run, onRetry }: { run: Run | null; onRe
         </div>
       ) : null}
       <div className="detail-block">
-        <h4>Execution Plan</h4>
+        <h4>执行计划</h4>
         {run.executionPlan?.length ? (
           <ol className="timeline-list">
             {run.executionPlan.map((step: ExecutionStep, idx: number) => (
               <li key={idx}><strong>{step.agent}</strong> - {step.text}</li>
             ))}
           </ol>
-        ) : <p className="empty">暂无 execution plan。</p>}
+        ) : <p className="empty">暂无执行计划。</p>}
       </div>
       <div className="detail-block">
-        <h4>Agent Outputs</h4>
+        <h4>执行输出</h4>
         <pre>{JSON.stringify(run.agentOutputs || {}, null, 2)}</pre>
       </div>
     </div>

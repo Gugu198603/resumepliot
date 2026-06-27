@@ -75,6 +75,8 @@ export interface ParseResult {
   kbSize: number;
   vectorProvider?: string;
   chunks?: RetrievedChunk[];
+  duplicateOf?: string;
+  reusedExisting?: boolean;
   error?: string;
 }
 
@@ -87,6 +89,8 @@ export interface Resume {
   kbSize?: number;
   chunks?: RetrievedChunk[];
   vectorProvider?: string | null;
+  duplicateCount?: number;
+  duplicateIds?: string[];
   createdAt: string;
   updatedAt?: string;
 }
