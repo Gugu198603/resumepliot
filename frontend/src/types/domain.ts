@@ -91,6 +91,31 @@ export interface Resume {
   updatedAt?: string;
 }
 
+export interface ResumeGenerationIssue {
+  path: string;
+  code: string;
+  message: string;
+  value?: string;
+  unsupported_tokens?: string[];
+  source_ids?: string[];
+}
+
+export interface ResumeGenerationValidation {
+  ok: boolean;
+  issues: ResumeGenerationIssue[];
+}
+
+export interface ResumeGenerationPreview {
+  ok: boolean;
+  resumeId?: string;
+  adjustment?: string;
+  resume?: Record<string, unknown>;
+  careerProfile?: Record<string, unknown>;
+  profile_validation?: ResumeGenerationValidation;
+  resume_validation?: ResumeGenerationValidation;
+  error?: string;
+}
+
 export interface ExecutionStep {
   agent: string;
   text?: string;

@@ -17,7 +17,11 @@ EMAIL_RE = re.compile(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}")
 DATE_RE = re.compile(r"\b(?:19|20)\d{2}(?:[./-]\d{1,2})?(?:[./-]\d{1,2})?\b")
 METRIC_RE = re.compile(r"(?<![\w.])(?:[$￥]\s*)?\d+(?:\.\d+)?\s*(?:%|k|K|m|M|万|千|人|年|月|天|次|倍|ms|s|MB|GB|QPS|TPS)?")
 EN_FACT_RE = re.compile(r"\b[A-Za-z][A-Za-z0-9.+#-]{1,}\b")
-CJK_FACT_RE = re.compile(r"[\u4e00-\u9fff]{2,20}")
+PROTECTED_ENTITY_PATH_RE = re.compile(
+    r"(?:basics\.name|basics\.email|basics\.phone|work\[\d+\]\.(?:name|position)|"
+    r"education\[\d+\]\.(?:institution|area|studyType)|projects\[\d+\]\.name|"
+    r"certificates\[\d+\]\.(?:name|issuer)|awards\[\d+\]\.(?:title|awarder))$"
+)
 
 
 def normalize_text(text: Any) -> str:
@@ -33,7 +37,7 @@ def _contains(haystack: str, needle: str) -> bool:
 
 def _extract_protected_tokens(text: str) -> List[str]:
     tokens: List[str] = []
-    for regex in (URL_RE, EMAIL_RE, DATE_RE, METRIC_RE, EN_FACT_RE, CJK_FACT_RE):
+    for regex in (URL_RE, EMAIL_RE, DATE_RE, METRIC_RE, EN_FACT_RE):
         tokens.extend(match.group(0).strip() for match in regex.finditer(text or ""))
 
     filtered: List[str] = []
@@ -184,6 +188,19 @@ class FactValidator:
                 )
 
         if _contains(source_corpus, value):
+            return issues
+
+        if PROTECTED_ENTITY_PATH_RE.search(path):
+            issues.append(
+                FactValidationIssue(
+                    path=path,
+                    code="UNSUPPORTED_ENTITY",
+                    message="The protected entity value is not found in approved evidence.",
+                    value=value,
+                    unsupported_tokens=[value],
+                    source_ids=source_ids,
+                )
+            )
             return issues
 
         protected_tokens = _extract_protected_tokens(value)

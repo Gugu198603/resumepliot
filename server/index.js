@@ -46,6 +46,7 @@ import { DEFAULT_GOLDEN_QUERIES, evaluateRag } from './services/ragEvaluation.js
 import { listSources, fetchFromSource } from './services/jobSources/index.js';
 import { startScheduler, getSchedulerStatus, runOnce } from './services/jobScheduler.js';
 import { logger } from './services/logger.js';
+import { generateResumePreview } from './services/resumeGeneration.js';
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -352,6 +353,25 @@ app.post('/api/resumes/:id/corrections', async (req, res) => {
     res.json({ resume, correction });
   } catch (error) {
     logger.error('resume_correction.error', {
+      resumeId: req.params.id,
+      error: error.message
+    });
+    res.status(500).json({ error: error.message });
+  }
+});
+app.post('/api/resumes/:id/generation-preview', async (req, res) => {
+  try {
+    const resume = await getResume(req.params.id);
+    if (!resume) return res.status(404).json({ error: 'Resume not found' });
+    const adjustment = String(req.body?.adjustment || '').trim();
+    const result = await generateResumePreview({ resume, adjustment });
+    res.status(result.ok ? 200 : 422).json({
+      resumeId: resume.id,
+      adjustment,
+      ...result
+    });
+  } catch (error) {
+    logger.error('resume_generation_preview.error', {
       resumeId: req.params.id,
       error: error.message
     });
