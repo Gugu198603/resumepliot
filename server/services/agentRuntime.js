@@ -7,6 +7,7 @@ import { critiqueAnswer } from '../agents/critic.js';
 import { rewriteArtifacts } from '../agents/writer.js';
 import { retrieveMemory, writeMemory } from './memoryManager.js';
 import { logger } from './logger.js';
+import { AgentRecoveryHardStopError, createRecoveryRuntime } from './agentRecovery.js';
 
 function makeRuntimeId() {
   return `runtime_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -181,6 +182,14 @@ export async function runAgentWorkflow({
 
   const agentOutputs = [];
   const llmTrace = [];
+  const recoveryRuntime = createRecoveryRuntime({
+    policy: {
+      maxAttemptsPerStep: Number(process.env.AGENT_RECOVERY_MAX_ATTEMPTS_PER_STEP || 1),
+      maxAttemptsPerRun: Number(process.env.AGENT_RECOVERY_MAX_ATTEMPTS_PER_RUN || 3),
+      maxRecoveryTokens: Number(process.env.AGENT_RECOVERY_MAX_TOKENS || 8000),
+      maxRecoveryCostUsd: Number(process.env.AGENT_RECOVERY_MAX_COST_USD || 0.02)
+    }
+  });
   let parseOutput = null;
   let plan = null;
   let retrieved = [];
@@ -191,7 +200,7 @@ export async function runAgentWorkflow({
   const depth = sessionTurns.length;
   const askedQuestions = sessionTurns.map((turn) => turn.question).filter(Boolean);
 
-  for (const step of executionPlan) {
+  async function runWorkflowStep(step) {
     const stepStartedAt = Date.now();
     logger.info('agent_runtime.step.start', {
       runtimeRunId,
@@ -241,6 +250,55 @@ export async function runAgentWorkflow({
     });
   }
 
+  for (const step of executionPlan) {
+    try {
+      await recoveryRuntime.runStep({
+        stepName: step.agent,
+        args: { order: step.order, agent: step.agent, goal },
+        operation: () => runWorkflowStep(step)
+      });
+    } catch (error) {
+      const recovery = error instanceof AgentRecoveryHardStopError
+        ? error.details?.recovery || recoveryRuntime.snapshot()
+        : recoveryRuntime.snapshot();
+      const classifiedError = {
+        code: error.code || 'AGENT_RUNTIME_FAILED',
+        message: error.message,
+        stepName: step.agent,
+        details: error.details || null
+      };
+      const llmSummary = summarizeLlmTrace(llmTrace);
+
+      logger.info('agent_runtime.run.failed', {
+        runtimeRunId,
+        error: classifiedError,
+        llmSummary,
+        recovery,
+        latencyMs: Date.now() - startedAt
+      });
+
+      return {
+        runtimeRunId,
+        status: error instanceof AgentRecoveryHardStopError ? 'hard_stopped' : 'failed',
+        error: classifiedError,
+        agentOutputs,
+        llmTrace,
+        llmSummary,
+        parseOutput,
+        plan,
+        retrieved,
+        questions,
+        critique,
+        rewrite,
+        retrievalMeta,
+        memoryContext,
+        memoryWrite: null,
+        recovery,
+        vectorProvider
+      };
+    }
+  }
+
   const llmSummary = summarizeLlmTrace(llmTrace);
   const memoryWrite = await writeRuntimeSummaryMemory({
     runtimeRunId,
@@ -268,6 +326,8 @@ export async function runAgentWorkflow({
 
   return {
     runtimeRunId,
+    status: 'succeeded',
+    error: null,
     agentOutputs,
     llmTrace,
     llmSummary,
@@ -280,6 +340,7 @@ export async function runAgentWorkflow({
     retrievalMeta,
     memoryContext,
     memoryWrite,
+    recovery: recoveryRuntime.snapshot(),
     vectorProvider
   };
 }

@@ -320,17 +320,18 @@ app.post('/api/agent-run', async (req, res) => {
       resumeId: persistedResume?.id || resumeId || null,
       vectorProvider
     });
-    const { agentOutputs, llmTrace, llmSummary, parseOutput, plan, retrieved, questions, critique, rewrite, retrievalMeta, memoryContext, memoryWrite, runtimeRunId } = runtime;
-    const record = await saveRunRecord({ goal, hasAnswer: Boolean(answer), resumeId: persistedResume?.id || resumeId || null, skill: skill.selectedSkill, executionPlan, vectorProvider, agentOutputs, retrievalMeta, llmTrace, llmSummary });
+    const { status, error, agentOutputs, llmTrace, llmSummary, parseOutput, plan, retrieved, questions, critique, rewrite, retrievalMeta, memoryContext, memoryWrite, recovery, runtimeRunId } = runtime;
+    const record = await saveRunRecord({ status, error, goal, hasAnswer: Boolean(answer), resumeId: persistedResume?.id || resumeId || null, skill: skill.selectedSkill, executionPlan, vectorProvider, agentOutputs, retrievalMeta, llmTrace, llmSummary, recovery });
     let session = null;
-    if (sessionId || goal) {
+    if (status === 'succeeded' && (sessionId || goal)) {
       session = sessionId ? await getSession(sessionId) : await findOrCreateSessionByGoal(goal, { resumeId: persistedResume?.id || resumeId || null });
       if (session) {
         const turn = { id: makeId('turn'), question: questions?.detail?.[0] || questions?.basic?.[0] || goal, answer, critique: critique?.feedback || [], improvedAnswer: rewrite?.improvedAnswer || '', retrieved, runId: record.id, resumeId: persistedResume?.id || resumeId || null };
         session = await appendSessionTurn(session.id, turn, record.id);
       }
     }
-    res.json({ runId: record.id, runtimeRunId, sessionId: session?.id || null, resumeId: persistedResume?.id || resumeId || null, skill, executionPlan, agentOutputs, plan, parseOutput, retrieved, questions, critique, rewrite, retrievalMeta, memoryContext, memoryWrite, vectorProvider, llmTrace, llmSummary });
+    const responseStatus = status === 'succeeded' ? 200 : 500;
+    res.status(responseStatus).json({ runId: record.id, runtimeRunId, status, error, sessionId: session?.id || null, resumeId: persistedResume?.id || resumeId || null, skill, executionPlan, agentOutputs, plan, parseOutput, retrieved, questions, critique, rewrite, retrievalMeta, memoryContext, memoryWrite, recovery, vectorProvider, llmTrace, llmSummary });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

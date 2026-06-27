@@ -89,8 +89,57 @@ export interface RetrievalMeta {
   resumeId?: string | null;
 }
 
+export interface RunError {
+  code?: string;
+  message?: string;
+  stepName?: string;
+  details?: unknown;
+}
+
+export interface RecoveryFingerprint {
+  fingerprint: string;
+  code?: string;
+  stepName?: string;
+  toolName?: string;
+  argsHash?: string | null;
+  firstSeenAt?: string;
+  lastSeenAt?: string;
+  attempts?: number;
+  lastOutcome?: string;
+  lastMessage?: string;
+}
+
+export interface RecoveryEvent {
+  at?: string;
+  type: string;
+  stepName?: string;
+  code?: string;
+  fingerprint?: string;
+  message?: string;
+  reason?: string;
+  tokens?: number;
+  costUsd?: number;
+  rule?: string | null;
+  error?: string | null;
+  attempt?: number;
+  delayMs?: number;
+}
+
+export interface RecoverySnapshot {
+  budget?: {
+    usedTokens?: number;
+    maxRecoveryTokens?: number;
+    estimatedCostUsd?: number;
+    maxRecoveryCostUsd?: number;
+  };
+  fingerprints?: RecoveryFingerprint[];
+  events?: RecoveryEvent[];
+}
+
 export interface Run {
   id: string;
+  status?: 'succeeded' | 'failed' | 'hard_stopped' | string;
+  error?: RunError | null;
   goal?: string;
   skillId?: string | null;
   skill?: { id?: string; name?: string } | null;
@@ -102,6 +151,7 @@ export interface Run {
   retrievalMeta?: RetrievalMeta | null;
   llmTrace?: LlmTraceItem[];
   llmSummary?: LlmSummary;
+  recovery?: RecoverySnapshot;
   createdAt: string;
 }
 

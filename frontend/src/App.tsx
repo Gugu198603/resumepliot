@@ -119,7 +119,30 @@ export default function App() {
     await loadSessions();
     await loadDashboard();
     await loadLlmMetrics();
+    if (data.runId) await openRun(data.runId);
     if (data.sessionId) openSession(data.sessionId);
+  }
+
+  async function retryRun(run: Run) {
+    setLoading('正在手动重试 workflow...');
+    const res = await fetch('/api/agent-run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: resumeText,
+        goal: run.goal || goal,
+        answer: '',
+        history: [],
+        sessionId: null,
+        resumeId: run.resumeId || parseResult?.resumeId || selectedSession?.resumeId || null
+      })
+    });
+    const data = await res.json();
+    setLoading(null);
+    await loadRuns();
+    await loadDashboard();
+    await loadLlmMetrics();
+    if (data.runId) await openRun(data.runId);
   }
 
   async function continueSession(payload: { text: string; answer: string }) {
@@ -559,8 +582,8 @@ export default function App() {
 
       {tab === 'runs' && (
         <main className="grid grid-wide detail-layout">
-          <section className="card"><h2>Runs 历史页</h2><div className="risk-list">{runs.length ? runs.map((run) => <div className="risk-item" key={run.id}><strong>{run.goal || 'No goal'}</strong><p>{run.createdAt}</p><p>{run.skill?.name || run.skillId || 'unknown skill'}</p><button onClick={() => openRun(run.id)}>查看详情</button></div>) : <p className="empty">还没有运行记录。</p>}</div></section>
-          <section className="card tall"><RunDetailPanel run={selectedRun} /></section>
+          <section className="card"><h2>Runs 历史页</h2><div className="risk-list">{runs.length ? runs.map((run) => <div className="risk-item" key={run.id}><strong>{run.goal || 'No goal'}</strong><p>{run.createdAt}</p><p>{run.skill?.name || run.skillId || 'unknown skill'} · {run.status || 'succeeded'}</p><button onClick={() => openRun(run.id)}>查看详情</button></div>) : <p className="empty">还没有运行记录。</p>}</div></section>
+          <section className="card tall"><RunDetailPanel run={selectedRun} onRetry={retryRun} /></section>
         </main>
       )}
 
