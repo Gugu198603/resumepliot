@@ -23,6 +23,7 @@ import {
   listResumes,
   getResume,
   updateResume,
+  saveResumeCorrectionEvent,
   deleteResume,
   getRun,
   createSession,
@@ -44,6 +45,7 @@ import { loadRuntimeMemory, runAgentWorkflow } from './services/agentRuntime.js'
 import { DEFAULT_GOLDEN_QUERIES, evaluateRag } from './services/ragEvaluation.js';
 import { listSources, fetchFromSource } from './services/jobSources/index.js';
 import { startScheduler, getSchedulerStatus, runOnce } from './services/jobScheduler.js';
+import { logger } from './services/logger.js';
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -131,6 +133,7 @@ function computeDashboard(db) {
   const resumes = db.resumes || [];
   const runs = db.runs || [];
   const sessions = db.sessions || [];
+  const corrections = db.corrections || [];
   const totalTurns = sessions.reduce((sum, s) => sum + (s.turns?.length || 0), 0);
   const retrievalItems = sessions.flatMap((s) => (s.turns || []).flatMap((t) => t.retrieved || []));
   const retrievedScores = retrievalItems.map((r) => Number(r.score || 0));
@@ -142,6 +145,28 @@ function computeDashboard(db) {
   const sessionHistoryHits = retrievalItems.filter((r) => r.source === 'session_history').length;
   const resumeHits = retrievalItems.filter((r) => r.source === 'resume').length;
   const sourceMix = retrievalItems.length ? { resume: Number((resumeHits / retrievalItems.length).toFixed(2)), session_history: Number((sessionHistoryHits / retrievalItems.length).toFixed(2)) } : { resume: 0, session_history: 0 };
+  const correctionResumeIds = new Set(corrections.map((item) => item.resumeId).filter(Boolean));
+  const errorCounts = new Map();
+  let changedSectionTitles = 0;
+  let beforeSectionTotal = 0;
+  let lineDeltaTotal = 0;
+  for (const event of corrections) {
+    const summary = event.summary || {};
+    changedSectionTitles += Number(summary.changedSectionTitles || 0);
+    beforeSectionTotal += Number(summary.beforeSectionCount || 0);
+    lineDeltaTotal += Number(summary.lineDelta || 0);
+    for (const type of event.errorTypes || summary.errorTypes || []) {
+      errorCounts.set(type, (errorCounts.get(type) || 0) + 1);
+    }
+  }
+  const correctionMetrics = {
+    totalCorrections: corrections.length,
+    correctedResumes: correctionResumeIds.size,
+    correctionRate: resumes.length ? Number((correctionResumeIds.size / resumes.length).toFixed(2)) : 0,
+    sectionChangeRatio: beforeSectionTotal ? Number((changedSectionTitles / beforeSectionTotal).toFixed(2)) : 0,
+    avgLineDelta: corrections.length ? Number((lineDeltaTotal / corrections.length).toFixed(1)) : 0,
+    commonErrorTypes: [...errorCounts.entries()].map(([type, count]) => ({ type, count })).sort((a, b) => b.count - a.count).slice(0, 6)
+  };
 
   return {
     overview: { resumes: resumes.length, runs: runs.length, sessions: sessions.length, totalTurns, vectorProvider },
@@ -153,6 +178,7 @@ function computeDashboard(db) {
       avgCritiqueLength: Number(avgCritiqueLength.toFixed(1)),
       improvedAnswerCoverage: Number(improvedCoverage.toFixed(2))
     },
+    correctionMetrics,
     sourceMix,
     trend: sessions.map((s) => ({ title: s.title, turns: s.turns?.length || 0, createdAt: s.createdAt })),
     retrievalSamples: sessions.flatMap((s) => (s.turns || []).slice(-2).map((t) => ({ session: s.title, question: t.question, retrieved: t.retrieved || [] }))).slice(-6),
@@ -163,6 +189,48 @@ function computeDashboard(db) {
       'improvedAnswerCoverage 反映改写模块在多轮会话中的参与程度。'
     ]
   };
+}
+
+function normalizeCorrectionSections(sections = []) {
+  return Array.isArray(sections)
+    ? sections.map((section) => ({
+        title: String(section?.title || '未命名模块').trim() || '未命名模块',
+        content: Array.isArray(section?.content)
+          ? section.content.map((line) => String(line || '').trim()).filter(Boolean)
+          : String(section?.content || '').split('\n').map((line) => line.trim()).filter(Boolean)
+      })).filter((section) => section.content.length)
+    : [];
+}
+
+function sectionsToText(sections = []) {
+  return sections.map((section) => [section.title, ...(section.content || [])].filter(Boolean).join('\n')).join('\n');
+}
+
+function previewText(value = '', limit = 80) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  return text.length > limit ? `${text.slice(0, limit)}...` : text;
+}
+
+function buildCorrectionDiff(beforeSections = [], afterSections = []) {
+  const max = Math.max(beforeSections.length, afterSections.length);
+  const modules = [];
+  for (let index = 0; index < max; index += 1) {
+    const before = beforeSections[index] || null;
+    const after = afterSections[index] || null;
+    modules.push({
+      index,
+      beforeTitle: before?.title || null,
+      afterTitle: after?.title || null,
+      titleChanged: Boolean(before && after && before.title !== after.title),
+      beforeLineCount: before?.content?.length || 0,
+      afterLineCount: after?.content?.length || 0,
+      lineDelta: (after?.content?.length || 0) - (before?.content?.length || 0),
+      beforePreview: previewText((before?.content || [])[0] || ''),
+      afterPreview: previewText((after?.content || [])[0] || ''),
+      changeKind: before && after ? 'updated' : before ? 'removed' : 'added'
+    });
+  }
+  return modules;
 }
 
 app.use(cors());
@@ -237,6 +305,58 @@ app.patch('/api/resumes/:id', async (req, res) => {
   const resume = await updateResume(req.params.id, { title: req.body?.title });
   if (!resume) return res.status(404).json({ error: 'Resume not found' });
   res.json({ resume });
+});
+app.post('/api/resumes/:id/corrections', async (req, res) => {
+  try {
+    const current = await getResume(req.params.id);
+    if (!current) return res.status(404).json({ error: 'Resume not found' });
+    const sections = normalizeCorrectionSections(req.body?.sections || []);
+    if (!sections.length) return res.status(400).json({ error: 'sections is required' });
+    const errorTypes = Array.isArray(req.body?.errorTypes) ? req.body.errorTypes : [];
+    const beforeSections = current.sections || [];
+    const moduleDiff = buildCorrectionDiff(beforeSections, sections);
+    logger.info('resume_correction.request', {
+      resumeId: current.id,
+      errorTypes,
+      beforeSectionCount: beforeSections.length,
+      afterSectionCount: sections.length,
+      moduleDiff
+    });
+    const text = typeof req.body?.text === 'string' && req.body.text.trim() ? normalizeText(req.body.text) : sectionsToText(sections);
+    const risks = detectRisks(text);
+    const kb = await buildKnowledgeBase(text, current.id);
+    const chunks = kb.map((chunk) => ({ ...chunk, resumeId: current.id }));
+    const correction = await saveResumeCorrectionEvent({
+      resumeId: current.id,
+      beforeSections,
+      afterSections: sections,
+      errorTypes
+    });
+    const resume = await updateResume(current.id, {
+      text,
+      sections,
+      risks,
+      kbSize: kb.length,
+      chunks,
+      vectorProvider
+    });
+    logger.info('resume_correction.saved', {
+      resumeId: current.id,
+      correctionId: correction.id,
+      errorTypes: correction.errorTypes,
+      summary: correction.summary,
+      moduleDiff,
+      rebuiltKbSize: kb.length,
+      riskTerms: risks.map((risk) => risk.term)
+    });
+    res.json({ resume, correction });
+  } catch (error) {
+    logger.error('resume_correction.error', {
+      resumeId: req.params.id,
+      error: error.message
+    });
+    res.status(500).json({ error: error.message });
+  }
 });
 app.delete('/api/resumes/:id', async (req, res) => {
   const removed = await deleteResume(req.params.id);

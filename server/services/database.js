@@ -49,6 +49,16 @@ export async function updateResume(id, patch) {
   return await provider.updateResume(id, patch);
 }
 
+export async function saveResumeCorrectionEvent(input) {
+  const provider = await getProvider();
+  return await provider.saveResumeCorrectionEvent(input);
+}
+
+export async function listResumeCorrectionEvents(limit = 500) {
+  const provider = await getProvider();
+  return await provider.listResumeCorrectionEvents(limit);
+}
+
 export async function deleteResume(id) {
   const provider = await getProvider();
   return await provider.deleteResume(id);

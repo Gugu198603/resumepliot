@@ -19,16 +19,31 @@ model User {
 }
 
 model Resume {
-  id           String       @id @default(cuid())
+  id           String                  @id @default(cuid())
   userId       String?
   title        String?
   originalText String
   parsedJson   String?
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
-  user         User?        @relation(fields: [userId], references: [id])
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+  user         User?                   @relation(fields: [userId], references: [id])
   runs         Run[]
   memories     MemoryItem[]
+  corrections  ResumeCorrectionEvent[]
+}
+
+model ResumeCorrectionEvent {
+  id          String   @id @default(cuid())
+  resumeId    String
+  errorTypes  String?
+  beforeJson  String?
+  afterJson   String?
+  summaryJson String?
+  createdAt   DateTime @default(now())
+  resume      Resume   @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+
+  @@index([resumeId, createdAt])
+  @@index([createdAt])
 }
 
 model Session {

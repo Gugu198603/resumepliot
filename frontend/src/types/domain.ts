@@ -35,6 +35,26 @@ export interface Section {
   content: string[];
 }
 
+export interface ResumeCorrectionSummary {
+  beforeSectionCount?: number;
+  afterSectionCount?: number;
+  changedSectionTitles?: number;
+  addedSections?: number;
+  removedSections?: number;
+  lineDelta?: number;
+  contentChanged?: boolean;
+}
+
+export interface ResumeCorrectionEvent {
+  id: string;
+  resumeId: string;
+  errorTypes: string[];
+  beforeSections?: Section[];
+  afterSections?: Section[];
+  summary?: ResumeCorrectionSummary;
+  createdAt: string;
+}
+
 export interface Risk {
   term: string;
   reason: string;
@@ -301,6 +321,14 @@ export interface DashboardRetrievalSample {
 export interface Dashboard {
   overview?: DashboardOverview;
   quality?: DashboardQuality;
+  correctionMetrics?: {
+    totalCorrections: number;
+    correctedResumes: number;
+    correctionRate: number;
+    sectionChangeRatio: number;
+    avgLineDelta: number;
+    commonErrorTypes: { type: string; count: number }[];
+  };
   sourceMix?: { resume: number; session_history: number };
   evalNotes?: string[];
   trend?: DashboardTrendItem[];

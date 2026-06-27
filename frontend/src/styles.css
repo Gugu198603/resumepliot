@@ -45,8 +45,7 @@
 html,
 body,
 #root {
-  height: 100%;
-  overflow: hidden;
+  min-height: 100%;
 }
 
 html {
@@ -91,13 +90,13 @@ pre,
 
 .page {
   width: 100%;
-  height: 100vh;
+  min-height: 100vh;
   max-width: none;
   margin: 0 auto;
   padding: 20px 24px;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .hero {
@@ -291,7 +290,7 @@ button:active {
   border-left: 4px solid rgba(183, 143, 136, 0.6);
 }
 
-.section-item ul,
+.section-content,
 .question-groups ul,
 .evaluation ul {
   margin: 8px 0 0 18px;
@@ -299,10 +298,35 @@ button:active {
   line-height: 1.6;
 }
 
-.section-item li,
 .question-groups li,
 .evaluation li {
   margin-bottom: 6px;
+}
+
+.section-content {
+  display: grid;
+  gap: 7px;
+  margin-left: 0;
+}
+
+.section-block {
+  margin: 0;
+  color: #6f6862;
+  line-height: 1.65;
+}
+
+.section-block.heading {
+  margin-top: 4px;
+  font-weight: 700;
+  color: var(--title);
+}
+
+.section-block.meta {
+  color: var(--accent-strong);
+}
+
+.section-block.paragraph + .section-block.paragraph {
+  margin-top: 4px;
 }
 
 .empty {
@@ -415,6 +439,76 @@ pre {
 .detail-stack { display: grid; gap: 16px; }
 .detail-header h3 { margin: 0; }
 .detail-header p { margin: 6px 0 0; color: var(--text-soft); }
+.correction-entry { margin-top: 10px; }
+.correction-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: rgba(80, 72, 68, 0.26);
+  display: flex;
+  justify-content: flex-end;
+  padding: 22px;
+}
+.correction-panel {
+  width: min(760px, 100%);
+  height: 100%;
+  overflow: auto;
+  background: var(--surface-strong);
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  box-shadow: var(--shadow);
+  padding: 18px;
+}
+.correction-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: flex-start;
+}
+.correction-head h3 { margin: 0 0 6px; }
+.correction-head p { margin: 0; color: var(--text-soft); line-height: 1.5; }
+.correction-types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0;
+}
+.correction-type {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 999px;
+  background: rgba(255, 251, 246, 0.76);
+  border: 1px solid rgba(145, 127, 116, 0.14);
+}
+.correction-sections {
+  display: grid;
+  gap: 12px;
+}
+.correction-section {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(145, 127, 116, 0.14);
+  background: rgba(255, 251, 246, 0.66);
+}
+.correction-section textarea {
+  min-height: 140px;
+}
+.correction-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 14px;
+}
+.correction-error-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
 .recovery-banner {
   display: flex;
   justify-content: space-between;
@@ -454,9 +548,9 @@ pre {
   gap: 16px;
 }
 .resume-full-text {
-  min-height: 220px;
-  max-height: 52vh;
-  overflow: auto;
+  min-height: 0;
+  max-height: none;
+  overflow: visible;
 }
 .timeline { display: grid; gap: 16px; }
 .timeline-item { display: grid; grid-template-columns: 36px 1fr; gap: 12px; align-items: start; }
@@ -482,7 +576,7 @@ pre {
   align-items: start;
   flex: 1 1 auto;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .control-panel {
@@ -490,8 +584,7 @@ pre {
   top: 24px;
   display: grid;
   gap: 12px;
-  height: 100%;
-  max-height: none;
+  max-height: calc(100vh - 48px);
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
@@ -499,12 +592,11 @@ pre {
 
 .display-panel {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
   gap: 8px;
   min-width: 0;
-  height: 100%;
-  min-height: 0;
-  overflow: hidden;
+  min-height: calc(100vh - 180px);
+  overflow: visible;
 }
 
 .panel-heading h2,
@@ -549,11 +641,6 @@ pre {
   color: var(--title);
 }
 
-.resume-input {
-  min-height: 220px;
-  max-height: none;
-}
-
 .answer-input {
   min-height: 96px;
   max-height: 96px;
@@ -574,6 +661,10 @@ pre {
 .action-row .upload {
   width: 100%;
   margin-top: 0;
+}
+
+.import-upload {
+  width: 100%;
 }
 
 .secondary-button {
@@ -716,10 +807,10 @@ button:disabled {
 
 .display-tabs-card {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
   gap: 12px;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
   padding: 14px;
 }
 
@@ -738,10 +829,8 @@ button:disabled {
 .display-section {
   min-width: 0;
   min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding-right: 4px;
-  overscroll-behavior: contain;
+  overflow: visible;
+  padding-right: 0;
 }
 
 .overview-grid {

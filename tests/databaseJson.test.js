@@ -57,6 +57,29 @@ test('json resume update renames and delete removes the record', async () => {
   assert.equal(await db.deleteResume('does-not-exist'), false);
 });
 
+test('json database stores resume correction events and updates parsed sections', async () => {
+  const resume = await db.saveResumeRecord({
+    text: '旧文本',
+    sections: [{ title: '未分类', content: ['A'] }],
+    risks: [],
+    kbSize: 1
+  });
+  const afterSections = [{ title: '项目经验', content: ['A', 'B'] }];
+  const event = await db.saveResumeCorrectionEvent({
+    resumeId: resume.id,
+    beforeSections: resume.sections,
+    afterSections,
+    errorTypes: ['section_title_wrong', 'content_split_wrong']
+  });
+  const updated = await db.updateResume(resume.id, { sections: afterSections, text: '项目经验\nA\nB', kbSize: 2 });
+  const snapshot = await db.getDashboardSnapshot();
+
+  assert.ok(event.id.startsWith('correction'));
+  assert.equal(event.summary.changedSectionTitles, 1);
+  assert.equal(updated.sections[0].title, '项目经验');
+  assert.equal(snapshot.corrections.length, 1);
+});
+
 test('json job descriptions upsert by dedupeKey and store matches', async () => {
   const first = await db.saveJobDescription({ title: 'Backend', company: 'Acme', source: 'greenhouse', sourceUrl: 'https://x/1', text: 'Go + gRPC', dedupeKey: 'dk-1' });
   assert.ok(first.id.startsWith('job'));

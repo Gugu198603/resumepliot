@@ -19,10 +19,42 @@ function normalizeDb(db = {}) {
   return {
     sessions: Array.isArray(db.sessions) ? db.sessions : [],
     resumes: Array.isArray(db.resumes) ? db.resumes : [],
+    corrections: Array.isArray(db.corrections) ? db.corrections : [],
     runs: Array.isArray(db.runs) ? db.runs : [],
     runEvents: Array.isArray(db.runEvents) ? db.runEvents : [],
     jobs: Array.isArray(db.jobs) ? db.jobs : [],
     jobMatches: Array.isArray(db.jobMatches) ? db.jobMatches : []
+  };
+}
+
+function normalizeSections(sections = []) {
+  return Array.isArray(sections)
+    ? sections.map((section) => ({
+        title: String(section?.title || '未命名模块').trim() || '未命名模块',
+        content: Array.isArray(section?.content)
+          ? section.content.map((line) => String(line || '').trim()).filter(Boolean)
+          : []
+      })).filter((section) => section.content.length)
+    : [];
+}
+
+function summarizeCorrection(beforeSections = [], afterSections = [], errorTypes = []) {
+  const beforeTitles = beforeSections.map((section) => section.title);
+  const afterTitles = afterSections.map((section) => section.title);
+  const beforeLines = beforeSections.reduce((sum, section) => sum + (section.content?.length || 0), 0);
+  const afterLines = afterSections.reduce((sum, section) => sum + (section.content?.length || 0), 0);
+  const titleChanges = Math.max(beforeTitles.length, afterTitles.length) - beforeTitles.filter((title, idx) => title === afterTitles[idx]).length;
+  return {
+    errorTypes,
+    beforeSectionCount: beforeSections.length,
+    afterSectionCount: afterSections.length,
+    changedSectionTitles: Math.max(0, titleChanges),
+    addedSections: Math.max(0, afterSections.length - beforeSections.length),
+    removedSections: Math.max(0, beforeSections.length - afterSections.length),
+    beforeLineCount: beforeLines,
+    afterLineCount: afterLines,
+    lineDelta: afterLines - beforeLines,
+    contentChanged: JSON.stringify(beforeSections) !== JSON.stringify(afterSections)
   };
 }
 
@@ -57,15 +89,46 @@ export async function updateResume(id, patch = {}) {
   const resume = db.resumes.find((item) => item.id === id);
   if (!resume) return null;
   if (typeof patch.title === 'string') resume.title = patch.title;
+  if (typeof patch.text === 'string') resume.text = patch.text;
+  if (Array.isArray(patch.sections)) resume.sections = normalizeSections(patch.sections);
+  if (Array.isArray(patch.risks)) resume.risks = patch.risks;
+  if (Number.isFinite(patch.kbSize)) resume.kbSize = patch.kbSize;
+  if (Array.isArray(patch.chunks)) resume.chunks = patch.chunks;
+  if (patch.vectorProvider !== undefined) resume.vectorProvider = patch.vectorProvider || null;
   resume.updatedAt = new Date().toISOString();
   await writeDb(db);
   return resume;
+}
+
+export async function saveResumeCorrectionEvent({ resumeId, beforeSections = [], afterSections = [], errorTypes = [] } = {}) {
+  const db = await readDb();
+  const normalizedBefore = normalizeSections(beforeSections);
+  const normalizedAfter = normalizeSections(afterSections);
+  const normalizedErrorTypes = Array.isArray(errorTypes) ? errorTypes.map((item) => String(item || '').trim()).filter(Boolean) : [];
+  const event = {
+    id: nowId('correction'),
+    resumeId,
+    errorTypes: normalizedErrorTypes,
+    beforeSections: normalizedBefore,
+    afterSections: normalizedAfter,
+    summary: summarizeCorrection(normalizedBefore, normalizedAfter, normalizedErrorTypes),
+    createdAt: new Date().toISOString()
+  };
+  db.corrections.push(event);
+  await writeDb(db);
+  return event;
+}
+
+export async function listResumeCorrectionEvents(limit = 500) {
+  const db = await readDb();
+  return db.corrections.slice(-limit).reverse();
 }
 
 export async function deleteResume(id) {
   const db = await readDb();
   const before = db.resumes.length;
   db.resumes = db.resumes.filter((item) => item.id !== id);
+  db.corrections = db.corrections.filter((item) => item.resumeId !== id);
   const removed = db.resumes.length < before;
   if (removed) await writeDb(db);
   return removed;
@@ -167,7 +230,8 @@ export async function getDatabaseOverview() {
     provider: 'json-fallback',
     resumes: db.resumes.length,
     runs: db.runs.length,
-    sessions: db.sessions.length
+    sessions: db.sessions.length,
+    corrections: db.corrections.length
   };
 }
 

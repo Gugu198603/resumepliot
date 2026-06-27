@@ -3,6 +3,7 @@ import ResumeDetailPanel from './components/ResumeDetailPanel';
 import ResumeComparePanel from './components/ResumeComparePanel';
 import RunDetailPanel from './components/RunDetailPanel';
 import SessionDetailPanel from './components/SessionDetailPanel';
+import { buildSectionBlocks } from './utils/sectionBlocks';
 import type {
   AgentOutput,
   Dashboard,
@@ -93,6 +94,7 @@ export default function App() {
     setParseResult(data);
     setResumeText(data.text);
     setVectorProvider(data.vectorProvider || 'memory');
+    setDisplayTab('resume');
     setLoading(null);
     loadResumes();
     loadDashboard();
@@ -215,6 +217,11 @@ export default function App() {
   async function loadLlmReadiness() { const res = await fetch('/api/llm-readiness'); setLlmReadiness(await res.json()); }
   async function loadLlmMetrics() { const res = await fetch('/api/llm-metrics'); setLlmMetrics(await res.json()); }
   async function openResume(id: string) { const res = await fetch(`/api/resumes/${id}`); const data = await res.json(); setSelectedResume(data.resume || null); setResumeView('detail'); }
+  async function handleCorrectionSaved(resume: Resume) {
+    setSelectedResume(resume);
+    await loadResumes();
+    await loadDashboard();
+  }
 
   function toggleCompare(id: string) {
     setCompareIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -273,7 +280,6 @@ export default function App() {
         <div>
           <p className="eyebrow">ResumePilot</p>
           <h1>ResumePilot Web App</h1>
-          <p className="subtitle">Workspace 现已升级为真正的 Agent 协作工作台：用户输入、当前问题、批注改写、agent 状态和检索上下文同时可见。</p>
         </div>
         {stats && <div className="stats">{stats.map(([label, value]) => <div key={label} className="stat-card"><span>{label}</span><strong>{value}</strong></div>)}</div>}
       </header>
@@ -293,11 +299,7 @@ export default function App() {
 
             <div className="control-section">
               <div className="step-label"><span>1</span><strong>导入简历</strong></div>
-              <textarea className="resume-input" value={resumeText} onChange={(e) => setResumeText(e.target.value)} placeholder="粘贴简历文本，或者上传 PDF/TXT。" />
-              <div className="action-row">
-                <label className="upload">上传 PDF / TXT<input type="file" accept=".pdf,.txt" onChange={(e) => { const file = e.target.files?.[0]; if (file) parseResume(file); }} /></label>
-                <button onClick={() => parseResume()}>解析简历</button>
-              </div>
+              <label className="upload import-upload">{parseResult ? '重新上传 PDF / TXT' : '上传 PDF / TXT'}<input type="file" accept=".pdf,.txt" onChange={(e) => { const file = e.target.files?.[0]; if (file) parseResume(file); }} /></label>
             </div>
 
             <div className="control-section">
@@ -405,7 +407,7 @@ export default function App() {
                           {parseResult.sections.length ? parseResult.sections.map((section) => (
                             <div key={section.title} className="section-item">
                               <h5>{section.title}</h5>
-                              <ul>{section.content.map((item, idx) => <li key={idx}>{item}</li>)}</ul>
+                              <div className="section-content">{buildSectionBlocks(section.content).map((block, idx) => <p className={`section-block ${block.kind}`} key={idx}>{block.text}</p>)}</div>
                             </div>
                           )) : <p className="empty">未识别到结构化模块，请查看上方完整原文。</p>}
                         </div>
@@ -588,7 +590,7 @@ export default function App() {
             </div>
             {resumeView === 'compare'
               ? <ResumeComparePanel comparison={comparison} />
-              : <ResumeDetailPanel resume={selectedResume} />}
+              : <ResumeDetailPanel resume={selectedResume} onCorrectionSaved={handleCorrectionSaved} />}
           </section>
         </main>
       )}
@@ -626,6 +628,21 @@ export default function App() {
                   <div className="detail-card"><span>Improved Coverage</span><strong>{dashboard.quality?.improvedAnswerCoverage}</strong></div>
                   <div className="detail-card"><span>Resume Retrieval Mix</span><strong>{dashboard.sourceMix?.resume}</strong></div>
                   <div className="detail-card"><span>History Retrieval Mix</span><strong>{dashboard.sourceMix?.session_history}</strong></div>
+                </div>
+                <div className="detail-block">
+                  <h4>人工纠偏统计</h4>
+                  <div className="detail-grid two-col">
+                    <div className="detail-card"><span>纠偏率</span><strong>{dashboard.correctionMetrics?.correctionRate ?? 0}</strong></div>
+                    <div className="detail-card"><span>纠偏简历数</span><strong>{dashboard.correctionMetrics?.correctedResumes ?? 0}</strong></div>
+                    <div className="detail-card"><span>纠偏事件</span><strong>{dashboard.correctionMetrics?.totalCorrections ?? 0}</strong></div>
+                    <div className="detail-card"><span>模块修改比例</span><strong>{dashboard.correctionMetrics?.sectionChangeRatio ?? 0}</strong></div>
+                    <div className="detail-card"><span>平均内容行变化</span><strong>{dashboard.correctionMetrics?.avgLineDelta ?? 0}</strong></div>
+                  </div>
+                  <div className="correction-error-list">
+                    {(dashboard.correctionMetrics?.commonErrorTypes || []).length
+                      ? dashboard.correctionMetrics?.commonErrorTypes.map((item) => <span className="chip" key={item.type}>{item.type}: {item.count}</span>)
+                      : <p className="empty">还没有人工纠偏事件。</p>}
+                  </div>
                 </div>
                 <div className="detail-block">
                   <h4>Qdrant Readiness</h4>

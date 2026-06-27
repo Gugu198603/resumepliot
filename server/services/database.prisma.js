@@ -23,6 +23,37 @@ function fromJsonString(value, fallback = null) {
   }
 }
 
+function normalizeSections(sections = []) {
+  return Array.isArray(sections)
+    ? sections.map((section) => ({
+        title: String(section?.title || '未命名模块').trim() || '未命名模块',
+        content: Array.isArray(section?.content)
+          ? section.content.map((line) => String(line || '').trim()).filter(Boolean)
+          : []
+      })).filter((section) => section.content.length)
+    : [];
+}
+
+function summarizeCorrection(beforeSections = [], afterSections = [], errorTypes = []) {
+  const beforeTitles = beforeSections.map((section) => section.title);
+  const afterTitles = afterSections.map((section) => section.title);
+  const beforeLines = beforeSections.reduce((sum, section) => sum + (section.content?.length || 0), 0);
+  const afterLines = afterSections.reduce((sum, section) => sum + (section.content?.length || 0), 0);
+  const titleChanges = Math.max(beforeTitles.length, afterTitles.length) - beforeTitles.filter((title, idx) => title === afterTitles[idx]).length;
+  return {
+    errorTypes,
+    beforeSectionCount: beforeSections.length,
+    afterSectionCount: afterSections.length,
+    changedSectionTitles: Math.max(0, titleChanges),
+    addedSections: Math.max(0, afterSections.length - beforeSections.length),
+    removedSections: Math.max(0, beforeSections.length - afterSections.length),
+    beforeLineCount: beforeLines,
+    afterLineCount: afterLines,
+    lineDelta: afterLines - beforeLines,
+    contentChanged: JSON.stringify(beforeSections) !== JSON.stringify(afterSections)
+  };
+}
+
 export async function saveResumeRecord(record) {
   const client = await getPrisma();
   return await client.resume.create({
@@ -70,10 +101,66 @@ export async function getResume(id) {
 
 export async function updateResume(id, patch = {}) {
   const client = await getPrisma();
+  const current = await getResume(id);
+  if (!current) return null;
   const data = {};
   if (typeof patch.title === 'string') data.title = patch.title;
+  const parsedPatch = {};
+  if (Array.isArray(patch.sections)) parsedPatch.sections = normalizeSections(patch.sections);
+  if (Array.isArray(patch.risks)) parsedPatch.risks = patch.risks;
+  if (Number.isFinite(patch.kbSize)) parsedPatch.kbSize = patch.kbSize;
+  if (Array.isArray(patch.chunks)) parsedPatch.chunks = patch.chunks;
+  if (patch.vectorProvider !== undefined) parsedPatch.vectorProvider = patch.vectorProvider || null;
+  if (Object.keys(parsedPatch).length) {
+    data.parsedJson = toJsonString({
+      sections: current.sections || [],
+      risks: current.risks || [],
+      kbSize: current.kbSize || 0,
+      chunks: current.chunks || [],
+      vectorProvider: current.vectorProvider || null,
+      ...parsedPatch
+    });
+  }
+  if (typeof patch.text === 'string') data.originalText = patch.text;
   if (!Object.keys(data).length) return await getResume(id);
   return mapResume(await client.resume.update({ where: { id }, data }));
+}
+
+export async function saveResumeCorrectionEvent({ resumeId, beforeSections = [], afterSections = [], errorTypes = [] } = {}) {
+  const client = await getPrisma();
+  const normalizedBefore = normalizeSections(beforeSections);
+  const normalizedAfter = normalizeSections(afterSections);
+  const normalizedErrorTypes = Array.isArray(errorTypes) ? errorTypes.map((item) => String(item || '').trim()).filter(Boolean) : [];
+  const summary = summarizeCorrection(normalizedBefore, normalizedAfter, normalizedErrorTypes);
+  const row = await client.resumeCorrectionEvent.create({
+    data: {
+      resumeId,
+      errorTypes: toJsonString(normalizedErrorTypes),
+      beforeJson: toJsonString(normalizedBefore),
+      afterJson: toJsonString(normalizedAfter),
+      summaryJson: toJsonString(summary)
+    }
+  });
+  return mapResumeCorrection(row);
+}
+
+function mapResumeCorrection(record) {
+  if (!record) return null;
+  return {
+    id: record.id,
+    resumeId: record.resumeId,
+    errorTypes: fromJsonString(record.errorTypes, []) || [],
+    beforeSections: fromJsonString(record.beforeJson, []) || [],
+    afterSections: fromJsonString(record.afterJson, []) || [],
+    summary: fromJsonString(record.summaryJson, {}) || {},
+    createdAt: record.createdAt
+  };
+}
+
+export async function listResumeCorrectionEvents(limit = 500) {
+  const client = await getPrisma();
+  const rows = await client.resumeCorrectionEvent.findMany({ orderBy: { createdAt: 'desc' }, take: limit });
+  return rows.map(mapResumeCorrection);
 }
 
 export async function deleteResume(id) {
@@ -82,6 +169,7 @@ export async function deleteResume(id) {
     await client.$transaction([
       client.run.updateMany({ where: { resumeId: id }, data: { resumeId: null } }),
       client.memoryItem.updateMany({ where: { resumeId: id }, data: { resumeId: null } }),
+      client.resumeCorrectionEvent.deleteMany({ where: { resumeId: id } }),
       client.resume.delete({ where: { id } })
     ]);
     return true;
@@ -247,18 +335,19 @@ export async function appendSessionTurn(sessionId, turn, runId = null) {
 }
 
 export async function getDashboardSnapshot() {
-  const [resumes, runs, sessions] = await Promise.all([listResumes(), listRecentRuns(100), listSessions()]);
-  return { resumes, runs, sessions };
+  const [resumes, runs, sessions, corrections] = await Promise.all([listResumes(), listRecentRuns(100), listSessions(), listResumeCorrectionEvents(500)]);
+  return { resumes, runs, sessions, corrections };
 }
 
 export async function getDatabaseOverview() {
   const client = await getPrisma();
-  const [resumes, runs, sessions] = await Promise.all([
+  const [resumes, runs, sessions, corrections] = await Promise.all([
     client.resume.count(),
     client.run.count(),
-    client.session.count()
+    client.session.count(),
+    client.resumeCorrectionEvent.count()
   ]);
-  return { provider: 'prisma', resumes, runs, sessions };
+  return { provider: 'prisma', resumes, runs, sessions, corrections };
 }
 
 function mapJob(record) {
