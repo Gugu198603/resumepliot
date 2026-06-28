@@ -1,0 +1,85 @@
+frontend/src/App.tsx
+  s_cdca74e6ddf8b7::t_4c74e1c914956f 486-594 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a3ffa055279a00af61f9b4b","tool_type":"agent","tool_id":"apply_patch","line_ranges":[{"Range":[486,594]}]}]}
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "1e294c2d33e70bb677f2ee452a0b8365644cdc38",
+  "prompts": {},
+  "humans": {
+    "h_edffa6d85a1c23": {
+      "author": "denglijuan <denglijuan.111@bytedance.com>"
+    }
+  },
+  "sessions": {
+    "s_cdca74e6ddf8b7": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a3fd4a65279a00af61f7810",
+        "model": "gpt-5.5__max"
+      },
+      "human_author": "denglijuan <denglijuan.111@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {
+    "frontend/src/App.tsx": [
+      {
+        "hash": "s_cdca74e6ddf8b7::t_4c74e1c914956f",
+        "line_ranges": [
+          {
+            "Range": [
+              486,
+              594
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a3ffa055279a00af61f9b4b",
+            "tool_type": "agent",
+            "tool_id": "apply_patch",
+            "line_ranges": [
+              {
+                "Range": [
+                  486,
+                  594
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "remote_transcripts": {
+    "s_cdca74e6ddf8b7": {
+      "tool": "trae",
+      "conversation_id": "6a3fd4a65279a00af61f7810",
+      "session_id": "6a3fd4a65279a00af61f7810",
+      "status": "remote_only",
+      "message": "Remote transcript resolution is not implemented yet for TRAE prompts."
+    },
+    "s_cdca74e6ddf8b7::t_4c74e1c914956f": {
+      "tool": "trae",
+      "conversation_id": "6a3fd4a65279a00af61f7810",
+      "session_id": "6a3fd4a65279a00af61f7810",
+      "status": "remote_only",
+      "message": "Remote transcript resolution is not implemented yet for TRAE prompts."
+    },
+    "s_e1dcaaf98f3d9e": {
+      "tool": "trae",
+      "conversation_id": "6a3ff9ec5279a00af61f9b2c",
+      "session_id": "6a3ff9ec5279a00af61f9b2c",
+      "status": "remote_only",
+      "message": "Remote transcript resolution is not implemented yet for TRAE prompts."
+    },
+    "s_e1dcaaf98f3d9e::t_d292d2b39b81fa": {
+      "tool": "trae",
+      "conversation_id": "6a3ff9ec5279a00af61f9b2c",
+      "session_id": "6a3ff9ec5279a00af61f9b2c",
+      "status": "remote_only",
+      "message": "Remote transcript resolution is not implemented yet for TRAE prompts."
+    }
+  }
+}
