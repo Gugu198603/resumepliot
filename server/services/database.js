@@ -69,6 +69,21 @@ export async function saveRunRecord(record) {
   return await provider.saveRunRecord(record);
 }
 
+export async function createRunRecord(record) {
+  const provider = await getProvider();
+  return await provider.createRunRecord(record);
+}
+
+export async function appendRunEvent(runId, event) {
+  const provider = await getProvider();
+  return await provider.appendRunEvent(runId, event);
+}
+
+export async function finalizeRunRecord(runId, record) {
+  const provider = await getProvider();
+  return await provider.finalizeRunRecord(runId, record);
+}
+
 export async function listRecentRuns(limit = 10) {
   const provider = await getProvider();
   return await provider.listRecentRuns(limit);

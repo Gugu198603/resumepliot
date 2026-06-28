@@ -224,6 +224,71 @@ export async function saveRunRecord(record) {
   return mapRun({ ...run, events: record.runEvents || [] });
 }
 
+export async function createRunRecord(record) {
+  const client = await getPrisma();
+  const now = new Date();
+  const run = await client.run.create({
+    data: {
+      sessionId: record.sessionId || null,
+      resumeId: record.resumeId || null,
+      runtimeRunId: record.runtimeRunId || null,
+      status: record.status || 'running',
+      goal: record.goal || '',
+      skillId: record.skill?.id || record.skillId || null,
+      vectorProvider: record.vectorProvider || null,
+      executionPlan: toJsonString(record.executionPlan || []),
+      resultJson: toJsonString(record.resultJson || record || {}),
+      startedAt: now
+    }
+  });
+  return mapRun({ ...run, events: [] });
+}
+
+export async function appendRunEvent(runId, event) {
+  const client = await getPrisma();
+  const row = await client.runEvent.create({
+    data: {
+      runId,
+      runtimeRunId: event.runtimeRunId || null,
+      sequence: Number.isFinite(event.sequence) ? event.sequence : 1,
+      type: event.type || 'unknown',
+      agent: event.agent || null,
+      status: event.status || null,
+      latencyMs: Number.isFinite(event.latencyMs) ? event.latencyMs : null,
+      errorCode: event.errorCode || null,
+      errorMessage: event.errorMessage || null,
+      payloadJson: toJsonString(event.payload || null)
+    }
+  });
+  return mapRunEvent(row);
+}
+
+export async function finalizeRunRecord(runId, record) {
+  const client = await getPrisma();
+  const current = await client.run.findUnique({ where: { id: runId } });
+  if (!current) return null;
+  const finishedAt = new Date();
+  const latencyMs = Number.isFinite(record.latencyMs)
+    ? record.latencyMs
+    : current.startedAt
+      ? Math.max(0, finishedAt.getTime() - current.startedAt.getTime())
+      : null;
+  const run = await client.run.update({
+    where: { id: runId },
+    data: {
+      status: record.status || current.status,
+      errorCode: record.error?.code || null,
+      errorMessage: record.error?.message || null,
+      resultJson: toJsonString(record),
+      executionPlan: toJsonString(record.executionPlan || []),
+      finishedAt,
+      latencyMs
+    },
+    include: { events: { orderBy: { sequence: 'asc' } } }
+  });
+  return mapRun(run);
+}
+
 function mapRun(record) {
   if (!record) return null;
   const result = fromJsonString(record.resultJson, {}) || {};

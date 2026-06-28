@@ -18,7 +18,9 @@ import { listTools } from './mcp/server.js';
 import { resolveExecutionPlan } from './services/skillWorkflow.js';
 import {
   saveResumeRecord,
-  saveRunRecord,
+  createRunRecord,
+  appendRunEvent,
+  finalizeRunRecord,
   listRecentRuns,
   getDatabaseOverview,
   listResumes,
@@ -520,7 +522,7 @@ app.post('/api/parse', upload.single('resume'), async (req, res) => {
 
 app.post('/api/agent-run', async (req, res) => {
   try {
-    const { text = '', goal, answer = '', history = [], sessionId = null, resumeId = null } = req.body;
+      const { text = '', goal, answer = '', history = [], sessionId = null, resumeId = null, startNewSession = false } = req.body;
     const persistedResume = resumeId ? await getResume(resumeId) : null;
     const sourceText = persistedResume?.text || text || '';
     const sections = persistedResume?.sections || splitSections(sourceText);
@@ -532,6 +534,18 @@ app.post('/api/agent-run', async (req, res) => {
       const session = await getSession(sessionId);
       sessionTurns = session?.turns || [];
     }
+      const runtimeRunId = makeId('runtime');
+      const run = await createRunRecord({
+        runtimeRunId,
+        status: 'running',
+        goal,
+        hasAnswer: Boolean(answer),
+        sessionId,
+        resumeId: persistedResume?.id || resumeId || null,
+        skill: skill.selectedSkill,
+        executionPlan,
+        vectorProvider
+      });
     const runtime = await runAgentWorkflow({
       goal,
       answer,
@@ -543,22 +557,282 @@ app.post('/api/agent-run', async (req, res) => {
       sessionTurns,
       sessionId,
       resumeId: persistedResume?.id || resumeId || null,
-      vectorProvider
+        vectorProvider,
+        runtimeRunId,
+        onRunEvent: (event) => appendRunEvent(run.id, event)
     });
-    const { status, error, agentOutputs, llmTrace, llmSummary, parseOutput, plan, retrieved, questions, critique, rewrite, retrievalMeta, memoryContext, memoryWrite, recovery, runtimeRunId, runEvents, runtimeLimits } = runtime;
-    const record = await saveRunRecord({ status, error, goal, hasAnswer: Boolean(answer), sessionId, resumeId: persistedResume?.id || resumeId || null, skill: skill.selectedSkill, executionPlan, vectorProvider, agentOutputs, retrievalMeta, llmTrace, llmSummary, recovery, runtimeRunId, runEvents, runtimeLimits });
+      const { status, error, agentOutputs, llmTrace, llmSummary, parseOutput, plan, retrieved, questions, critique, rewrite, retrievalMeta, memoryContext, memoryWrite, recovery, runEvents, runtimeLimits, workspaceState, orchestrationHistory } = runtime;
     let session = null;
-    if (status === 'succeeded' && (sessionId || goal)) {
-      session = sessionId ? await getSession(sessionId) : await findOrCreateSessionByGoal(goal, { resumeId: persistedResume?.id || resumeId || null });
+      if (status === 'succeeded' && (sessionId || goal)) {
+        session = sessionId && !startNewSession
+          ? await getSession(sessionId)
+          : await createSession({ title: goal || '模拟面试', goal: goal || '模拟面试', resumeId: persistedResume?.id || resumeId || null });
       if (session) {
-        const turn = { id: makeId('turn'), question: questions?.detail?.[0] || questions?.basic?.[0] || goal, answer, critique: critique?.feedback || [], improvedAnswer: rewrite?.improvedAnswer || '', retrieved, runId: record.id, resumeId: persistedResume?.id || resumeId || null };
-        session = await appendSessionTurn(session.id, turn, record.id);
+          const turn = { id: makeId('turn'), question: questions?.detail?.[0] || questions?.basic?.[0] || goal, answer, critique: critique?.feedback || [], improvedAnswer: rewrite?.improvedAnswer || '', retrieved, runId: run.id, resumeId: persistedResume?.id || resumeId || null };
+          session = await appendSessionTurn(session.id, turn, run.id);
       }
     }
+      const finalRecord = await finalizeRunRecord(run.id, { runId: run.id, runtimeRunId, status, error, goal, hasAnswer: Boolean(answer), sessionId: session?.id || sessionId || null, resumeId: persistedResume?.id || resumeId || null, skill: skill.selectedSkill, executionPlan, vectorProvider, agentOutputs, retrievalMeta, llmTrace, llmSummary, recovery, runEvents, runtimeLimits, parseOutput, plan, retrieved, questions, critique, rewrite, memoryContext, memoryWrite, workspaceState, orchestrationHistory });
     const responseStatus = status === 'succeeded' ? 200 : 500;
-    res.status(responseStatus).json({ runId: record.id, runtimeRunId, status, error, sessionId: session?.id || null, resumeId: persistedResume?.id || resumeId || null, skill, executionPlan, agentOutputs, plan, parseOutput, retrieved, questions, critique, rewrite, retrievalMeta, memoryContext, memoryWrite, recovery, runEvents, runtimeLimits, vectorProvider, llmTrace, llmSummary });
+      res.status(responseStatus).json({ runId: run.id, runtimeRunId, status, error, sessionId: session?.id || null, resumeId: persistedResume?.id || resumeId || null, skill, executionPlan, agentOutputs, plan, parseOutput, retrieved, questions, critique, rewrite, retrievalMeta, memoryContext, memoryWrite, recovery, runEvents: finalRecord?.runEvents || runEvents, runtimeLimits, workspaceState, orchestrationHistory, vectorProvider, llmTrace, llmSummary });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+function writeSse(res, event, data) {
+  res.write(`event: ${event}\n`);
+  res.write(`data: ${JSON.stringify(data)}\n\n`);
+}
+
+app.post('/api/sessions/:id/continue/stream', async (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders?.();
+
+  let closed = false;
+  res.on('close', () => {
+    closed = true;
+  });
+  const push = (type, payload = {}) => {
+    if (!closed) writeSse(res, type, payload);
+  };
+
+  try {
+    const session = await getSession(req.params.id);
+    if (!session) {
+      push('run_error', { error: 'Session not found' });
+      return res.end();
+    }
+    const { text = '', answer = '', resumeId = session.resumeId || null } = req.body || {};
+    if (!String(answer || '').trim()) {
+      push('run_error', { error: 'answer is required' });
+      return res.end();
+    }
+
+    const turns = session.turns || [];
+    const lastTurn = turns[turns.length - 1] || null;
+    const depth = turns.filter((turn) => String(turn.answer || '').trim()).length;
+    const askedQuestions = turns.map((t) => t.question).filter(Boolean);
+    const currentQuestion = lastTurn?.question || session.goal || session.title || '请介绍你的经历。';
+
+    push('process_event', { id: 'memory', title: '读取上下文', detail: '正在读取本场面试历史和简历记忆。', status: 'running' });
+    const memoryContext = await loadRuntimeMemory({ goal: session.goal || session.title || '', resumeId, sessionId: session.id });
+    push('process_event', { id: 'memory', title: '读取上下文', detail: `已读取 ${memoryContext.items.length} 条相关记忆。`, status: 'done' });
+
+    push('process_event', { id: 'retriever', title: '检索相关经历', detail: 'retriever 正在从简历和历史回答中召回依据。', status: 'running' });
+    const retrieval = await retrieveContext({ text, query: session.goal || session.title || '', topK: 3, sessionTurns: turns, resumeId });
+    const retrieved = retrieval.retrieved;
+    push('process_event', { id: 'retriever', title: '检索相关经历', detail: `已召回 ${retrieved.length} 条可参考经历。`, status: 'done' });
+
+    push('process_event', { id: 'critic', title: '分析你的回答', detail: 'critic 正在评价回答的具体性、可信度和经历匹配度。', status: 'running' });
+    const critique = await critiqueAnswer({ answer, retrieved, question: currentQuestion, memoryContext });
+    push('process_event', { id: 'critic', title: '分析你的回答', detail: `已生成 ${critique?.feedback?.length || 0} 条反馈。`, status: 'done' });
+
+    push('process_event', { id: 'writer', title: '整理反馈表达', detail: 'writer 正在整理更好的回答表达。', status: 'running' });
+    const rewrite = await rewriteArtifacts({ text, answer, feedback: critique?.feedback || [], memoryContext });
+    push('process_event', { id: 'writer', title: '整理反馈表达', detail: rewrite?.improvedAnswer ? '已整理出可参考的改进回答。' : '已完成反馈整理。', status: 'done' });
+
+    const answeredTurn = lastTurn
+      ? { ...lastTurn, answer, critique: critique?.feedback || [], improvedAnswer: rewrite?.improvedAnswer || '', retrieved, resumeId, depth }
+      : { id: makeId('turn'), question: currentQuestion, answer, critique: critique?.feedback || [], improvedAnswer: rewrite?.improvedAnswer || '', retrieved, resumeId, depth };
+    const answeredTurns = lastTurn ? [...turns.slice(0, -1), answeredTurn] : [answeredTurn];
+
+    push('process_event', { id: 'interviewer', title: '生成下一轮追问', detail: 'interviewer 正在基于你的回答继续追问。', status: 'running' });
+    const interview = await generateInterviewQuestions({ goal: session.goal || session.title || '', retrieved, previousAnswer: answer, previousQuestion: currentQuestion, depth: depth + 1, askedQuestions, memoryContext });
+    const questions = interview.questions;
+    const question = questions?.detail?.[0] || questions?.basic?.[0] || '请继续介绍你的经历。';
+    const nextTurn = { id: makeId('turn'), question, answer: '', critique: [], improvedAnswer: '', retrieved: [], resumeId, depth: depth + 1, stage: interview.stage };
+    const updatedSession = await updateSessionTurns(session.id, [...answeredTurns, nextTurn]);
+    push('process_event', { id: 'interviewer', title: '生成下一轮追问', detail: '下一轮问题已生成。', status: 'done' });
+    push('run_complete', { session: updatedSession, turn: nextTurn, answeredTurn, critique, rewrite, questions, depth: depth + 1, stage: interview.stage, retrieved, memoryContext, retrievalMeta: { resumeResults: retrieval.resumeResults, historyResults: retrieval.historyResults, kbSource: retrieval.kbSource, resumeId: retrieval.resumeId } });
+    res.end();
+  } catch (error) {
+    logger.error('session_continue_stream.error', { sessionId: req.params.id, error: error.message });
+    push('run_error', { error: error.message });
+    res.end();
+  }
+});
+
+app.post('/api/agent-run/stream', async (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders?.();
+
+  let closed = false;
+  res.on('close', () => {
+    closed = true;
+  });
+
+  try {
+    const { text = '', goal, answer = '', history = [], sessionId = null, resumeId = null, startNewSession = false } = req.body || {};
+    const persistedResume = resumeId ? await getResume(resumeId) : null;
+    const sourceText = persistedResume?.text || text || '';
+    const sections = persistedResume?.sections || splitSections(sourceText);
+    const risks = persistedResume?.risks || detectRisks(sourceText);
+    const skill = await routeSkill({ goal: goal || '' });
+    const executionPlan = resolveExecutionPlan({ content: skill.rawContent || '' });
+    let sessionTurns = [];
+    if (sessionId) {
+      const session = await getSession(sessionId);
+      sessionTurns = session?.turns || [];
+    }
+
+    const runtimeRunId = makeId('runtime');
+    const run = await createRunRecord({
+      runtimeRunId,
+      status: 'running',
+      goal,
+      hasAnswer: Boolean(answer),
+      sessionId,
+      resumeId: persistedResume?.id || resumeId || null,
+      skill: skill.selectedSkill,
+      executionPlan,
+      vectorProvider,
+      resultJson: {
+        runtimeRunId,
+        status: 'running',
+        goal,
+        hasAnswer: Boolean(answer),
+        skill: skill.selectedSkill,
+        executionPlan,
+        vectorProvider
+      }
+    });
+    writeSse(res, 'run_created', { runId: run.id, runtimeRunId, status: 'running', executionPlan, skill });
+
+    const runtime = await runAgentWorkflow({
+      goal,
+      answer,
+      history,
+      sourceText,
+      sections,
+      risks,
+      executionPlan,
+      sessionTurns,
+      sessionId,
+      resumeId: persistedResume?.id || resumeId || null,
+      vectorProvider,
+      runtimeRunId,
+      onRunEvent: async (event) => {
+        const savedEvent = await appendRunEvent(run.id, event);
+        if (!closed) writeSse(res, 'run_event', savedEvent || event);
+      }
+    });
+
+    const {
+      status,
+      error,
+      agentOutputs,
+      llmTrace,
+      llmSummary,
+      parseOutput,
+      plan,
+      retrieved,
+      questions,
+      critique,
+      rewrite,
+      retrievalMeta,
+      memoryContext,
+      memoryWrite,
+      recovery,
+      runEvents,
+      runtimeLimits,
+      workspaceState,
+      orchestrationHistory
+    } = runtime;
+
+    let session = null;
+    if (status === 'succeeded' && (sessionId || goal)) {
+      session = sessionId && !startNewSession
+        ? await getSession(sessionId)
+        : await createSession({ title: goal || '模拟面试', goal: goal || '模拟面试', resumeId: persistedResume?.id || resumeId || null });
+      if (session) {
+        const turn = {
+          id: makeId('turn'),
+          question: questions?.detail?.[0] || questions?.basic?.[0] || goal,
+          answer,
+          critique: critique?.feedback || [],
+          improvedAnswer: rewrite?.improvedAnswer || '',
+          retrieved,
+          runId: run.id,
+          resumeId: persistedResume?.id || resumeId || null
+        };
+        session = await appendSessionTurn(session.id, turn, run.id);
+      }
+    }
+
+    const finalRecord = await finalizeRunRecord(run.id, {
+      runId: run.id,
+      runtimeRunId,
+      status,
+      error,
+      goal,
+      hasAnswer: Boolean(answer),
+      sessionId: session?.id || sessionId || null,
+      resumeId: persistedResume?.id || resumeId || null,
+      skill: skill.selectedSkill,
+      executionPlan,
+      vectorProvider,
+      agentOutputs,
+      retrievalMeta,
+      llmTrace,
+      llmSummary,
+      recovery,
+      runtimeLimits,
+      parseOutput,
+      plan,
+      retrieved,
+      questions,
+      critique,
+      rewrite,
+      memoryContext,
+      memoryWrite,
+      workspaceState,
+      orchestrationHistory,
+      runEvents,
+      latencyMs: runtime.runEvents?.findLast?.((event) => event.type === 'run_success' || event.type === 'run_failed')?.latencyMs
+    });
+
+    if (!closed) {
+      writeSse(res, 'run_complete', {
+        runId: run.id,
+        runtimeRunId,
+        status,
+        error,
+        sessionId: session?.id || null,
+        resumeId: persistedResume?.id || resumeId || null,
+        skill,
+        executionPlan,
+        agentOutputs,
+        plan,
+        parseOutput,
+        retrieved,
+        questions,
+        critique,
+        rewrite,
+        retrievalMeta,
+        memoryContext,
+        memoryWrite,
+        recovery,
+        runEvents: finalRecord?.runEvents || runEvents,
+        runtimeLimits,
+        workspaceState,
+        orchestrationHistory,
+        vectorProvider,
+        llmTrace,
+        llmSummary
+      });
+      res.end();
+    }
+  } catch (error) {
+    logger.error('agent_run_stream.error', { error: error.message });
+    if (!closed) {
+      writeSse(res, 'run_error', { error: error.message });
+      res.end();
+    }
   }
 });
 

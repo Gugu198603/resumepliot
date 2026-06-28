@@ -1,11 +1,12 @@
 import type { RetrievedChunk, Turn } from '../types/domain';
 
 export default function ConversationTimeline({ turns }: { turns: Turn[] }) {
-  if (!turns?.length) return <p className="empty">暂无对话轮次。</p>;
+  const answeredTurns = (turns || []).filter((turn) => String(turn.answer || '').trim());
+  if (!answeredTurns.length) return <p className="empty">暂无已提交的对话轮次。</p>;
 
   return (
     <div className="timeline">
-      {turns.map((turn, idx) => (
+      {answeredTurns.map((turn, idx) => (
         <div key={idx} className="timeline-item">
           <div className="timeline-node">{idx + 1}</div>
           <div className="timeline-content">

@@ -159,6 +159,60 @@ async function writeRuntimeSummaryMemory({
   }
 }
 
+const AGENT_ORDER = ['parser', 'planner', 'retriever', 'interviewer', 'critic', 'writer'];
+
+function normalizeConfidence(value, fallback = 0.7) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : fallback;
+}
+
+function makeCollaborativeOutput(agent, { observation, proposal, confidence = 0.7, nextAction = null, data = null } = {}) {
+  return {
+    agent,
+    observation: observation || `${agent} completed its workspace update.`,
+    proposal: proposal || 'Continue orchestration with the next best agent.',
+    confidence: normalizeConfidence(confidence),
+    nextAction,
+    data
+  };
+}
+
+function buildRuntimeStep({ agent, executionPlan = [], order }) {
+  const template = executionPlan.find((step) => step.agent === agent);
+  return {
+    order,
+    text: template?.text || `${agent} updates the shared workspace`,
+    agent
+  };
+}
+
+function pickPlannerNextAgent(plan, completedAgents) {
+  const nextAgent = String(plan?.nextAgent || '').trim();
+  if (AGENT_ORDER.includes(nextAgent) && !completedAgents.has(nextAgent)) return nextAgent;
+  return null;
+}
+
+function determineNextAgent({ plan, completedAgents, answer, questions, critique, rewrite }) {
+  if (!completedAgents.has('parser')) return 'parser';
+  if (!completedAgents.has('planner')) return 'planner';
+
+  const plannerNext = pickPlannerNextAgent(plan, completedAgents);
+  if (plannerNext === 'retriever') return 'retriever';
+  if (!completedAgents.has('retriever')) return 'retriever';
+
+  if (plannerNext === 'interviewer') return 'interviewer';
+  if (!questions && !completedAgents.has('interviewer')) return 'interviewer';
+
+  if (!answer) return null;
+  if (plannerNext === 'critic') return 'critic';
+  if (!critique && !completedAgents.has('critic')) return 'critic';
+
+  if (plannerNext === 'writer') return 'writer';
+  if (!rewrite && !completedAgents.has('writer')) return 'writer';
+
+  return null;
+}
+
 export async function runAgentWorkflow({
   goal = '',
   answer = '',
@@ -172,15 +226,18 @@ export async function runAgentWorkflow({
   resumeId = null,
   userId = null,
   jobId = null,
-  vectorProvider = defaultVectorProvider
+  vectorProvider = defaultVectorProvider,
+  runtimeRunId: providedRuntimeRunId = null,
+  onRunEvent = null
 } = {}) {
-  const runtimeRunId = makeRuntimeId();
+  const runtimeRunId = providedRuntimeRunId || makeRuntimeId();
   const startedAt = Date.now();
   const limits = createRuntimeLimits();
   const runEvents = [];
   const toolCallCounts = new Map();
   let eventSequence = 0;
   let totalToolCalls = 0;
+  let eventDelivery = Promise.resolve();
 
   function recordRunEvent(type, payload = {}) {
     const event = {
@@ -195,7 +252,21 @@ export async function runAgentWorkflow({
       payload: payload.payload || null
     };
     runEvents.push(event);
+    if (onRunEvent) {
+      eventDelivery = eventDelivery.then(() => onRunEvent(event)).catch((error) => {
+        logger.info('agent_runtime.event_delivery_failed', {
+          runtimeRunId,
+          sequence: event.sequence,
+          type,
+          error: error.message
+        });
+      });
+    }
     return event;
+  }
+
+  async function flushRunEvents() {
+    await eventDelivery;
   }
 
   const stateMachine = createRunStateMachine({
@@ -323,6 +394,24 @@ export async function runAgentWorkflow({
   let retrievalMeta = null;
   const depth = sessionTurns.length;
   const askedQuestions = sessionTurns.map((turn) => turn.question).filter(Boolean);
+  const completedAgents = new Set();
+  const orchestrationHistory = [];
+  const workspaceState = {
+    goal,
+    answer,
+    sourceText,
+    sections,
+    risks,
+    memoryContext,
+    retrieved,
+    questions,
+    critique,
+    rewrite,
+    observations: [],
+    proposals: [],
+    completedAgents: [],
+    nextAction: null
+  };
 
   async function runWorkflowStep(step) {
     assertNotTimedOut(step.agent);
@@ -340,13 +429,26 @@ export async function runAgentWorkflow({
       text: step.text
     });
 
+    let collaborativeOutput = null;
     if (step.agent === 'parser') {
       parseOutput = { sections, risks: risks.length ? risks : detectRisks(sourceText) };
-      agentOutputs.push({ step, output: parseOutput });
+      collaborativeOutput = makeCollaborativeOutput('parser', {
+        observation: `识别到 ${parseOutput.sections.length} 个简历模块和 ${parseOutput.risks.length} 个风险提示。`,
+        proposal: '将结构化模块交给 planner 判断下一位协作 agent。',
+        confidence: parseOutput.sections.length ? 0.84 : 0.55,
+        nextAction: 'planner',
+        data: parseOutput
+      });
     } else if (step.agent === 'planner') {
-      plan = await planNextStep({ goal, history, sections, memoryContext });
+      plan = await planNextStep({ goal, history: orchestrationHistory.length ? orchestrationHistory : history, sections, memoryContext });
       if (plan.llm) llmTrace.push({ agent: 'planner', ...plan.llm });
-      agentOutputs.push({ step, output: plan });
+      collaborativeOutput = makeCollaborativeOutput('planner', {
+        observation: `当前阶段判断为「${plan.currentStage || 'general'}」。`,
+        proposal: plan.reason || '根据目标、历史和简历模块决定下一位 specialist agent。',
+        confidence: plan.mode === 'live' ? 0.82 : 0.64,
+        nextAction: plan.nextAgent || 'retriever',
+        data: plan
+      });
     } else if (step.agent === 'retriever') {
       const result = await retrieveContext({ text: sourceText, query: goal, topK: 3, sessionTurns, resumeId });
       retrieved = result.retrieved;
@@ -379,21 +481,82 @@ export async function runAgentWorkflow({
           }))
         }
       });
-      agentOutputs.push({ step, output: { retrieved, retrievalMeta, memoryContext } });
+      collaborativeOutput = makeCollaborativeOutput('retriever', {
+        observation: `从 ${retrievalMeta.kbSource} 知识库取回 ${retrieved.length} 条上下文，长期记忆命中 ${memoryContext.items.length} 条。`,
+        proposal: '将召回片段写入共享 workspace，供 interviewer/critic/writer 共同引用。',
+        confidence: retrieved.length ? 0.78 : 0.48,
+        nextAction: answer ? 'critic' : 'interviewer',
+        data: { retrieved, retrievalMeta, memoryContext }
+      });
     } else if (step.agent === 'interviewer') {
       const result = await generateInterviewQuestions({ goal, retrieved, previousAnswer: answer, depth, askedQuestions, memoryContext });
       questions = result.questions;
       if (result.llm) llmTrace.push({ agent: 'interviewer', ...result.llm });
-      agentOutputs.push({ step, output: result });
+      collaborativeOutput = makeCollaborativeOutput('interviewer', {
+        observation: `生成第 ${depth + 1} 轮「${result.stage || '追问'}」问题。`,
+        proposal: answer ? '已有回答，交给 critic 评估回答质量。' : '等待用户回答当前问题后再进入 critic/writer。',
+        confidence: result.mode === 'live' ? 0.82 : 0.65,
+        nextAction: answer ? 'critic' : null,
+        data: result
+      });
     } else if (step.agent === 'critic' && answer) {
       critique = await critiqueAnswer({ answer, retrieved, question: questions?.detail?.[0] || questions?.basic?.[0] || '', memoryContext });
       if (critique.llm) llmTrace.push({ agent: 'critic', ...critique.llm });
-      agentOutputs.push({ step, output: critique });
+      collaborativeOutput = makeCollaborativeOutput('critic', {
+        observation: `完成回答评估，语义匹配度 ${critique.scores?.semanticMatch ?? '-'}。`,
+        proposal: '将反馈交给 writer 生成可改进表达。',
+        confidence: critique.mode === 'live' ? 0.82 : 0.68,
+        nextAction: 'writer',
+        data: critique
+      });
     } else if (step.agent === 'writer' && answer) {
       rewrite = await rewriteArtifacts({ text: sourceText, answer, feedback: critique?.feedback || [], memoryContext });
       if (rewrite.llm) llmTrace.push({ agent: 'writer', ...rewrite.llm });
-      agentOutputs.push({ step, output: rewrite });
+      collaborativeOutput = makeCollaborativeOutput('writer', {
+        observation: rewrite.improvedAnswer ? '已基于 critic 反馈生成改进回答。' : '未生成改进回答。',
+        proposal: '本轮协作可以收束，等待用户确认或继续追问。',
+        confidence: rewrite.mode === 'live' ? 0.8 : 0.62,
+        nextAction: null,
+        data: rewrite
+      });
+    } else {
+      collaborativeOutput = makeCollaborativeOutput(step.agent, {
+        observation: `${step.agent} 当前没有满足执行条件，已跳过。`,
+        proposal: '继续由 orchestrator 选择下一步。',
+        confidence: 0.5,
+        nextAction: null,
+        data: null
+      });
     }
+
+    workspaceState.retrieved = retrieved;
+    workspaceState.questions = questions;
+    workspaceState.critique = critique;
+    workspaceState.rewrite = rewrite;
+    workspaceState.observations.push({ agent: step.agent, value: collaborativeOutput.observation });
+    workspaceState.proposals.push({ agent: step.agent, value: collaborativeOutput.proposal, confidence: collaborativeOutput.confidence });
+    workspaceState.nextAction = collaborativeOutput.nextAction;
+    completedAgents.add(step.agent);
+    workspaceState.completedAgents = [...completedAgents];
+    orchestrationHistory.push({
+      agent: step.agent,
+      observation: collaborativeOutput.observation,
+      proposal: collaborativeOutput.proposal,
+      confidence: collaborativeOutput.confidence,
+      nextAction: collaborativeOutput.nextAction
+    });
+    agentOutputs.push({ step, output: collaborativeOutput, workspaceState: { ...workspaceState, sourceText: undefined } });
+    recordRunEvent('agent_observation', {
+      agent: step.agent,
+      status: 'succeeded',
+      payload: {
+        observation: collaborativeOutput.observation,
+        proposal: collaborativeOutput.proposal,
+        confidence: collaborativeOutput.confidence,
+        nextAction: collaborativeOutput.nextAction,
+        completedAgents: workspaceState.completedAgents
+      }
+    });
 
     logger.info('agent_runtime.step.success', {
       runtimeRunId,
@@ -410,14 +573,27 @@ export async function runAgentWorkflow({
     assertNotTimedOut(step.agent);
   }
 
-  for (const step of executionPlan) {
+  let nextAgent = determineNextAgent({ plan, completedAgents, answer, questions, critique, rewrite });
+  while (nextAgent) {
+    const step = buildRuntimeStep({ agent: nextAgent, executionPlan, order: orchestrationHistory.length + 1 });
     try {
-      if (executionPlan.length > limits.maxSteps) {
-        hardStop('AGENT_MAX_STEPS_EXCEEDED', `Agent runtime refused executionPlan length ${executionPlan.length}; maxSteps=${limits.maxSteps}.`, {
+      if (orchestrationHistory.length >= limits.maxSteps) {
+        hardStop('AGENT_MAX_STEPS_EXCEEDED', `Agent runtime refused more than maxSteps=${limits.maxSteps}.`, {
           agent: step.agent,
-          executionPlanLength: executionPlan.length
+          executionPlanLength: executionPlan.length,
+          orchestrationHistoryLength: orchestrationHistory.length
         });
       }
+      recordRunEvent('orchestrator_decision', {
+        agent: step.agent,
+        status: 'selected',
+        payload: {
+          reason: completedAgents.has('planner') ? 'planner_and_workspace_state' : 'bootstrap',
+          plannerNextAgent: plan?.nextAgent || null,
+          completedAgents: [...completedAgents],
+          workspaceNextAction: workspaceState.nextAction
+        }
+      });
       await recoveryRuntime.runStep({
         stepName: step.agent,
         args: { order: step.order, agent: step.agent, goal },
@@ -466,7 +642,7 @@ export async function runAgentWorkflow({
         latencyMs: Date.now() - startedAt
       });
 
-      return {
+      const result = {
         runtimeRunId,
         status: stateMachine.status,
         error: classifiedError,
@@ -486,9 +662,14 @@ export async function runAgentWorkflow({
         runEvents,
         stateTransitions: stateMachine.transitions,
         runtimeLimits: limits,
-        vectorProvider
+        vectorProvider,
+        workspaceState,
+        orchestrationHistory
       };
+      await flushRunEvents();
+      return result;
     }
+    nextAgent = determineNextAgent({ plan, completedAgents, answer, questions, critique, rewrite });
   }
 
   const llmSummary = summarizeLlmTrace(llmTrace);
@@ -536,9 +717,9 @@ export async function runAgentWorkflow({
     latencyMs: Date.now() - startedAt
   });
 
-  return {
+  const result = {
     runtimeRunId,
-      status: stateMachine.status,
+    status: stateMachine.status,
     error: null,
     agentOutputs,
     llmTrace,
@@ -554,8 +735,12 @@ export async function runAgentWorkflow({
     memoryWrite,
     recovery: recoveryRuntime.snapshot(),
     runEvents,
-      stateTransitions: stateMachine.transitions,
+    stateTransitions: stateMachine.transitions,
     runtimeLimits: limits,
-    vectorProvider
+    vectorProvider,
+    workspaceState,
+    orchestrationHistory
   };
+  await flushRunEvents();
+  return result;
 }

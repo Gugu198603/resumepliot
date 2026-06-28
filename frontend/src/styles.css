@@ -457,6 +457,7 @@ pre {
   grid-column: 1 / -1;
 }
 .detail-layout > .card.tall {
+  grid-row: auto;
   display: flex;
   flex-direction: column;
 }
@@ -889,6 +890,66 @@ button:disabled {
   font-size: 18px;
 }
 
+.agent-progress-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(145, 127, 116, 0.14);
+  background: rgba(255, 251, 246, 0.62);
+}
+
+.agent-progress-panel h4 {
+  margin: 0;
+  color: var(--title);
+}
+
+.agent-progress-list {
+  display: grid;
+  gap: 8px;
+}
+
+.agent-progress-step {
+  display: grid;
+  grid-template-columns: 64px minmax(120px, 180px) minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 252, 248, 0.78);
+  border: 1px solid rgba(145, 127, 116, 0.1);
+}
+
+.agent-progress-step span {
+  width: fit-content;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-soft);
+  background: rgba(145, 127, 116, 0.1);
+}
+
+.agent-progress-step.running span {
+  color: var(--accent-strong);
+  background: rgba(154, 133, 120, 0.16);
+}
+
+.agent-progress-step.done span {
+  color: #66735f;
+  background: rgba(167, 176, 161, 0.22);
+}
+
+.agent-progress-step strong {
+  color: var(--title);
+}
+
+.agent-progress-step p {
+  margin: 0;
+  color: var(--text-soft);
+  line-height: 1.45;
+}
+
 .answer-tools {
   display: flex;
   align-items: center;
@@ -1000,8 +1061,18 @@ button:disabled {
 
 .compact-trace {
   margin-top: 10px;
-  grid-template-columns: repeat(5, minmax(96px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.compact-trace .trace-node {
+  min-width: 0;
+  padding: 12px;
+}
+
+.compact-trace .trace-node span,
+.compact-trace .trace-node small {
+  white-space: nowrap;
 }
 
 .agent-stack {
@@ -1799,6 +1870,15 @@ button:disabled {
 }
 
 /* Resume management */
+.resumes-layout {
+  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+  align-items: stretch;
+}
+
+.resumes-layout > .card {
+  align-self: stretch;
+}
+
 .resume-list-head {
   display: flex;
   align-items: center;

@@ -1,4 +1,44 @@
-import type { ExecutionStep, Run } from '../types/domain';
+import type { ExecutionStep, Run, RunEvent } from '../types/domain';
+
+function asRecord(value: unknown): Record<string, any> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, any> : {};
+}
+
+function eventTitle(event: RunEvent) {
+  const agent = event.agent ? `${event.agent} · ` : '';
+  const map: Record<string, string> = {
+    run_start: '运行开始',
+    run_transition: '状态迁移',
+    orchestrator_decision: '调度决策',
+    memory_loaded: '加载记忆',
+    step_start: '开始执行',
+    rag_retrieval: 'RAG 检索',
+    agent_observation: '协作观察',
+    step_success: '执行完成',
+    run_success: '运行成功',
+    run_failed: '运行失败',
+    guard_hard_stop: '保护停止'
+  };
+  return `${agent}${map[event.type || ''] || event.type || '事件'}`;
+}
+
+function eventDescription(event: RunEvent) {
+  const payload = asRecord(event.payload);
+  if (event.type === 'orchestrator_decision') {
+    return `由 ${payload.reason || 'orchestrator'} 选择下一步，planner 建议：${payload.plannerNextAgent || '-'}`;
+  }
+  if (event.type === 'rag_retrieval') {
+    const retrieved = Array.isArray(payload.retrieved) ? payload.retrieved.length : 0;
+    return `query="${payload.query || '-'}"，召回 ${retrieved} 条，来源 ${payload.kbSource || '-'}`;
+  }
+  if (event.type === 'agent_observation') {
+    return [payload.observation, payload.proposal ? `建议：${payload.proposal}` : ''].filter(Boolean).join(' ');
+  }
+  if (event.type === 'step_start') return payload.text || 'Agent 开始处理共享 workspace。';
+  if (event.errorMessage) return event.errorMessage;
+  if (payload.reason) return payload.reason;
+  return '';
+}
 
 export default function RunDetailPanel({ run, onRetry }: { run: Run | null; onRetry?: (run: Run) => void }) {
   if (!run) return <p className="empty">点击左侧某条运行记录查看详情。</p>;
@@ -8,6 +48,7 @@ export default function RunDetailPanel({ run, onRetry }: { run: Run | null; onRe
   const recovery = run.recovery;
   const recoveryEvents = recovery?.events || [];
   const hardStopped = run.status === 'hard_stopped';
+    const runEvents = run.runEvents || [];
 
   return (
     <div className="detail-stack">
@@ -37,6 +78,25 @@ export default function RunDetailPanel({ run, onRetry }: { run: Run | null; onRe
         <div className="detail-card"><span>检索来源</span><strong>{run.vectorProvider || '-'}</strong></div>
         <div className="detail-card"><span>是否有回答</span><strong>{run.hasAnswer ? '是' : '否'}</strong></div>
       </div>
+        <div className="detail-block">
+          <h4>实时协作时间线</h4>
+          {runEvents.length ? (
+            <ol className="timeline-list run-event-list">
+              {runEvents.map((event, idx) => {
+                const payload = asRecord(event.payload);
+                return (
+                  <li key={event.id || `${event.sequence}-${idx}`}>
+                    <strong>{event.sequence || idx + 1}. {eventTitle(event)}</strong>
+                    <span className={event.status === 'succeeded' ? 'chip ok' : event.status === 'running' ? 'chip' : event.errorCode ? 'chip danger' : 'chip'}>{event.status || '-'}</span>
+                    {event.latencyMs != null ? ` · ${event.latencyMs} ms` : ''}
+                    {eventDescription(event) ? <p>{eventDescription(event)}</p> : null}
+                    {payload.confidence != null ? <p className="metric-footnote">confidence: {payload.confidence}</p> : null}
+                  </li>
+                );
+              })}
+            </ol>
+          ) : <p className="empty">暂无实时事件。启动流式运行后会逐步写入。</p>}
+        </div>
       {summary && (
         <div className="detail-block">
           <h4>模型调用概览</h4>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import ResumeDetailPanel from './components/ResumeDetailPanel';
 import RunDetailPanel from './components/RunDetailPanel';
 import SessionDetailPanel from './components/SessionDetailPanel';
@@ -15,7 +15,8 @@ import type {
   QdrantReadiness,
   Resume,
   ResumeGenerationPreview,
-  Run,
+    Run,
+    RunEvent,
   Session
 } from './types/domain';
 
@@ -37,18 +38,26 @@ type SpeechRecognitionInstance = {
   onend: (() => void) | null;
   onerror: (() => void) | null;
   start: () => void;
+  stop: () => void;
+};
+type AgentProgressStatus = 'running' | 'done' | 'failed';
+type AgentProgressStep = {
+  id: string;
+  title: string;
+  detail: string;
+  status: AgentProgressStatus;
 };
 
 const MAIN_NAV_ITEMS: Array<{ key: string; label: string; target: Tab; displayTab?: DisplayTab }> = [
   { key: 'workbench', label: '工作台', target: 'workspace', displayTab: 'overview' },
-  { key: 'resumes', label: '我的简历', target: 'resumes' },
+  { key: 'resumes', label: '简历库', target: 'resumes' },
   { key: 'sessions', label: '面试记录', target: 'sessions' },
   { key: 'diagnostics', label: '管理与诊断', target: 'dashboard' }
 ];
 
 const WORKBENCH_TABS: Array<[DisplayTab, string]> = [
   ['overview', '当前进度'],
-  ['resume', '当前简历'],
+  ['resume', '简历内容'],
   ['generated', '简历生成'],
   ['jd', '岗位匹配']
 ];
@@ -310,6 +319,9 @@ export default function App() {
   const [isListening, setIsListening] = useState(false);
   const [speechHint, setSpeechHint] = useState('');
   const [importNotice, setImportNotice] = useState('');
+  const [agentProgress, setAgentProgress] = useState<AgentProgressStep[]>([]);
+  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+  const voiceStopRequestedRef = useRef(false);
 
   const currentQuestion = useMemo(() => {
     const turns = selectedSession?.turns || [];
@@ -319,8 +331,58 @@ export default function App() {
 
   const answeredTurns = useMemo(() => (selectedSession?.turns || []).filter((turn) => String(turn.answer || '').trim()).length, [selectedSession]);
 
+  function updateAgentProgress(step: AgentProgressStep) {
+    setAgentProgress((current) => {
+      const exists = current.some((item) => item.id === step.id);
+      const next = exists ? current.map((item) => item.id === step.id ? { ...item, ...step } : item) : [...current, step];
+      return next.slice(-6);
+    });
+  }
+
+  function completeProgress(id: string, detail?: string) {
+    setAgentProgress((current) => current.map((item) => item.id === id ? { ...item, status: 'done', detail: detail || item.detail } : item));
+  }
+
+  function progressFromRunEvent(event: RunEvent) {
+    const payload = (event.payload && typeof event.payload === 'object' && !Array.isArray(event.payload)) ? event.payload as Record<string, any> : {};
+    if (event.type === 'run_start') {
+      updateAgentProgress({ id: 'start', title: '启动协作流程', detail: '正在读取目标、简历和历史上下文。', status: 'running' });
+    }
+    if (event.type === 'memory_loaded') {
+      completeProgress('start', `已读取 ${payload.total ?? 0} 条相关记忆。`);
+    }
+    if (event.type === 'step_start') {
+      const labels: Record<string, [string, string]> = {
+        parser: ['解析简历内容', '识别简历模块、风险点和可追问经历。'],
+        planner: ['制定出题计划', '根据目标决定下一步由哪个 Agent 处理。'],
+        retriever: ['检索相关经历', '从简历和历史问答中召回可追问片段。'],
+        interviewer: ['生成面试问题', '面试官 Agent 正在组织第一轮问题。'],
+        critic: ['分析你的回答', '评价回答的具体性、可信度和经历匹配度。'],
+        writer: ['整理反馈表达', '根据评价整理更好的回答表达。']
+      };
+      const [title, detail] = labels[event.agent || ''] || ['执行协作步骤', 'Agent 正在处理当前任务。'];
+      updateAgentProgress({ id: event.agent || `step-${event.sequence}`, title, detail, status: 'running' });
+    }
+    if (event.type === 'rag_retrieval') {
+      const count = Array.isArray(payload.retrieved) ? payload.retrieved.length : 0;
+      updateAgentProgress({ id: 'retriever', title: '检索相关经历', detail: `已召回 ${count} 条可参考经历，准备交给面试官 Agent。`, status: 'done' });
+    }
+    if (event.type === 'agent_observation') {
+      updateAgentProgress({
+        id: event.agent || `observation-${event.sequence}`,
+        title: event.agent === 'interviewer' ? '生成面试问题' : event.agent === 'planner' ? '制定出题计划' : event.agent === 'retriever' ? '检索相关经历' : '完成协作步骤',
+        detail: payload.observation || payload.proposal || '该 Agent 已完成当前步骤。',
+        status: 'done'
+      });
+    }
+    if (event.type === 'run_success') {
+      updateAgentProgress({ id: 'done', title: '本轮协作完成', detail: '问题或反馈已生成，可以继续回答。', status: 'done' });
+    }
+  }
+
   function startVoiceAnswer() {
     if (typeof window === 'undefined') return;
+    if (isListening) return;
     const SpeechRecognition = (window as typeof window & {
       SpeechRecognition?: new () => SpeechRecognitionInstance;
       webkitSpeechRecognition?: new () => SpeechRecognitionInstance;
@@ -333,8 +395,8 @@ export default function App() {
     }
     const recognition = new SpeechRecognition();
     recognition.lang = 'zh-CN';
-    recognition.continuous = false;
-    recognition.interimResults = false;
+    recognition.continuous = true;
+    recognition.interimResults = true;
     recognition.onresult = (event) => {
       let finalText = '';
       for (let index = event.resultIndex; index < event.results.length; index += 1) {
@@ -347,11 +409,180 @@ export default function App() {
     recognition.onerror = () => {
       setIsListening(false);
       setSpeechHint('语音识别中断，请检查麦克风权限后重试。');
+        recognitionRef.current = null;
     };
-    recognition.onend = () => setIsListening(false);
-    setSpeechHint('正在听你回答，结束后会自动填入回答框。');
+      recognition.onend = () => {
+        if (!voiceStopRequestedRef.current) {
+          try {
+            recognition.start();
+            return;
+          } catch {
+            // Fall through and mark the session as stopped if the browser refuses to restart.
+          }
+        }
+        setIsListening(false);
+        recognitionRef.current = null;
+        setSpeechHint('录音已停止。你可以继续编辑文字，或提交回答。');
+      };
+      recognitionRef.current = recognition;
+      voiceStopRequestedRef.current = false;
+      setSpeechHint('正在持续听你回答。讲完后点击“停止录音”。');
     setIsListening(true);
     recognition.start();
+  }
+
+  function stopVoiceAnswer() {
+    voiceStopRequestedRef.current = true;
+    recognitionRef.current?.stop();
+    recognitionRef.current = null;
+    setIsListening(false);
+    setSpeechHint('录音已停止。你可以继续编辑文字，或提交回答。');
+  }
+
+  function upsertRun(run: Run) {
+    setRuns((current) => {
+      const exists = current.some((item) => item.id === run.id);
+      const next = exists ? current.map((item) => item.id === run.id ? { ...item, ...run } : item) : [run, ...current];
+      return next.slice(0, 20);
+    });
+    setSelectedRun((current) => current?.id === run.id || !current ? { ...(current || run), ...run } : current);
+  }
+
+  function appendRunEvent(runId: string, event: RunEvent) {
+    setSelectedRun((current) => {
+      if (!current || current.id !== runId) return current;
+      const runEvents = [...(current.runEvents || []), event].sort((a, b) => (a.sequence || 0) - (b.sequence || 0));
+      return { ...current, status: event.status || current.status, runEvents };
+    });
+    setRuns((current) => current.map((run) => {
+      if (run.id !== runId) return run;
+      const runEvents = [...(run.runEvents || []), event].sort((a, b) => (a.sequence || 0) - (b.sequence || 0));
+      return { ...run, status: event.status || run.status, runEvents };
+    }));
+  }
+
+  async function streamAgentRun(payload: Record<string, unknown>) {
+    const res = await fetch('/api/agent-run/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.body) throw new Error('当前浏览器不支持流式读取。');
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let activeRunId = '';
+    let finalData: Record<string, unknown> | null = null;
+
+    function handleBlock(block: string) {
+      const eventLine = block.split('\n').find((line) => line.startsWith('event:'));
+      const dataLines = block.split('\n').filter((line) => line.startsWith('data:'));
+      const event = eventLine?.replace(/^event:\s*/, '').trim() || 'message';
+      const raw = dataLines.map((line) => line.replace(/^data:\s?/, '')).join('\n');
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      if (event === 'run_created') {
+        activeRunId = data.runId;
+        const liveRun: Run = {
+          id: data.runId,
+          runtimeRunId: data.runtimeRunId,
+          status: 'running',
+          goal,
+          skill: data.skill?.selectedSkill || data.skill,
+          executionPlan: data.executionPlan || [],
+          runEvents: [],
+          createdAt: new Date().toISOString()
+        };
+        upsertRun(liveRun);
+        setLoading('Agent 已启动，正在实时协作...');
+      } else if (event === 'run_event') {
+        if (activeRunId) appendRunEvent(activeRunId, data as RunEvent);
+          progressFromRunEvent(data as RunEvent);
+        const agent = data.agent ? `${data.agent} ` : '';
+        if (data.type === 'step_start') setLoading(`${agent}正在执行...`);
+        if (data.type === 'rag_retrieval') setLoading('retriever 已完成检索，正在交给下一位 agent...');
+        if (data.type === 'agent_observation') setLoading(`${agent}已写入协作观察。`);
+      } else if (event === 'run_complete') {
+        finalData = data;
+        const completedRun: Run = {
+          id: data.runId,
+          runtimeRunId: data.runtimeRunId,
+          status: data.status,
+          error: data.error,
+          goal,
+          skill: data.skill?.selectedSkill || data.skill,
+          executionPlan: data.executionPlan || [],
+          agentOutputs: data.agentOutputs || [],
+          retrievalMeta: data.retrievalMeta || null,
+          llmTrace: data.llmTrace || [],
+          llmSummary: data.llmSummary,
+          recovery: data.recovery,
+          runtimeLimits: data.runtimeLimits,
+          runEvents: data.runEvents || [],
+          resumeId: data.resumeId || null,
+          createdAt: new Date().toISOString()
+        };
+        upsertRun(completedRun);
+      } else if (event === 'run_error') {
+        throw new Error(data.error || '流式运行失败。');
+      }
+    }
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const blocks = buffer.split('\n\n');
+      buffer = blocks.pop() || '';
+      blocks.filter(Boolean).forEach(handleBlock);
+    }
+    if (buffer.trim()) handleBlock(buffer.trim());
+    return finalData;
+  }
+
+  async function streamSessionContinue(payload: { text: string; answer: string; resumeId?: string | null }) {
+    if (!selectedSession?.id) return null;
+    const res = await fetch(`/api/sessions/${selectedSession.id}/continue/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.body) throw new Error('当前浏览器不支持流式读取。');
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let finalData: Record<string, any> | null = null;
+
+    function handleBlock(block: string) {
+      const eventLine = block.split('\n').find((line) => line.startsWith('event:'));
+      const dataLines = block.split('\n').filter((line) => line.startsWith('data:'));
+      const event = eventLine?.replace(/^event:\s*/, '').trim() || 'message';
+      const raw = dataLines.map((line) => line.replace(/^data:\s?/, '')).join('\n');
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      if (event === 'process_event') {
+        updateAgentProgress(data as AgentProgressStep);
+        setLoading(data.detail || data.title || 'Agent 正在协作...');
+      } else if (event === 'run_complete') {
+        finalData = data;
+        updateAgentProgress({ id: 'done', title: '本轮协作完成', detail: '反馈和下一轮追问已生成。', status: 'done' });
+      } else if (event === 'run_error') {
+        throw new Error(data.error || '继续对话失败。');
+      }
+    }
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const blocks = buffer.split('\n\n');
+      buffer = blocks.pop() || '';
+      blocks.filter(Boolean).forEach(handleBlock);
+    }
+    if (buffer.trim()) handleBlock(buffer.trim());
+    return finalData;
   }
 
   async function parseResume(file?: File) {
@@ -380,13 +611,14 @@ export default function App() {
 
   async function runAgents() {
     if (!resumeText.trim()) return;
-    setLoading('正在开始面试...');
-    const res = await fetch('/api/agent-run', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: resumeText, goal, answer: '', history: [], sessionId: selectedSession?.id || null, resumeId: parseResult?.resumeId || selectedSession?.resumeId || null })
-    });
-    const data = await res.json();
+    setLoading('正在启动流式 Agent 协作...');
+    setAgentProgress([]);
+    setSelectedSession(null);
+    setActiveQuestion('');
+    setActiveCritique([]);
+    setActiveImproved('');
+    setAnswerDraft('');
+    const data = await streamAgentRun({ text: resumeText, goal, answer: '', history: [], sessionId: null, startNewSession: true, resumeId: parseResult?.resumeId || selectedSession?.resumeId || null }) as Record<string, any>;
     setActiveQuestion(data.questions?.detail?.[0] || data.questions?.basic?.[0] || '');
     setActiveCritique(data.critique?.feedback || []);
     setActiveImproved(data.rewrite?.improvedAnswer || '');
@@ -396,25 +628,20 @@ export default function App() {
     await loadSessions();
     await loadDashboard();
     await loadLlmMetrics();
-    if (data.runId) await openRun(data.runId);
-    if (data.sessionId) openSession(data.sessionId);
+      if (data.runId) await openRun(data.runId);
+      if (data.sessionId) await openSession(data.sessionId);
   }
 
   async function retryRun(run: Run) {
-    setLoading('正在重新执行面试流程...');
-    const res = await fetch('/api/agent-run', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        text: resumeText,
-        goal: run.goal || goal,
-        answer: '',
-        history: [],
-        sessionId: null,
-        resumeId: run.resumeId || parseResult?.resumeId || selectedSession?.resumeId || null
-      })
-    });
-    const data = await res.json();
+    setLoading('正在重新执行流式 Agent 协作...');
+    const data = await streamAgentRun({
+      text: resumeText,
+      goal: run.goal || goal,
+      answer: '',
+      history: [],
+      sessionId: null,
+      resumeId: run.resumeId || parseResult?.resumeId || selectedSession?.resumeId || null
+    }) as Record<string, any>;
     setLoading(null);
     await loadRuns();
     await loadDashboard();
@@ -424,13 +651,10 @@ export default function App() {
 
   async function continueSession(payload: { text: string; answer: string }) {
     if (!selectedSession?.id) return;
-    setLoading('正在继续对话...');
-    const res = await fetch(`/api/sessions/${selectedSession.id}/continue`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...payload, resumeId: parseResult?.resumeId || selectedSession?.resumeId || null })
-    });
-    const data = await res.json();
+    setLoading('正在分析回答并生成追问...');
+    setAgentProgress([]);
+    const data = await streamSessionContinue({ ...payload, resumeId: parseResult?.resumeId || selectedSession?.resumeId || null });
+    if (!data) return;
     setSelectedSession(data.session || null);
     setActiveQuestion(data.questions?.detail?.[0] || data.questions?.basic?.[0] || '');
     setActiveCritique(data.critique?.feedback || []);
@@ -817,25 +1041,33 @@ export default function App() {
 
               {displayTab === 'overview' && (
                 <div className="display-section">
-                  <div className="overview-grid">
-                    <div className="detail-card"><span>当前问题</span><strong>{currentQuestion ? `第 ${answeredTurns + 1} 题待回答` : '待生成'}</strong></div>
-                    <div className="detail-card"><span>本轮反馈</span><strong>{activeCritique.length ? `${activeCritique.length} 条` : '待生成'}</strong></div>
-                    <div className="detail-card"><span>已回答</span><strong>{answeredTurns} 轮</strong></div>
-                    <div className="detail-card"><span>历史练习</span><strong>{sessions.length}</strong></div>
-                  </div>
                   <div className={currentQuestion ? 'question-board active' : 'question-board'}>
                     <span>面试官提问</span>
                     <h3>{currentQuestion || '点击左侧“开始面试”后，第一道问题会显示在这里。'}</h3>
                     <p>{currentQuestion ? '请在下方输入或语音回答，然后提交，系统会继续追问并给出反馈。' : '当前还没有待回答的问题。'}</p>
                   </div>
+                    {agentProgress.length ? (
+                      <div className="agent-progress-panel">
+                        <h4>Agent 协作过程</h4>
+                        <div className="agent-progress-list">
+                          {agentProgress.map((step) => (
+                            <div className={`agent-progress-step ${step.status}`} key={step.id}>
+                              <span>{step.status === 'running' ? '进行中' : step.status === 'done' ? '完成' : '失败'}</span>
+                              <strong>{step.title}</strong>
+                              <p>{step.detail}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
                   <div className="answer-board">
                     <div className="answer-board-head">
                       <div>
                         <span>你的回答</span>
                         <strong>{currentQuestion ? `第 ${answeredTurns + 1} 题` : '等待问题'}</strong>
                       </div>
-                      <button className="secondary-button voice-button" type="button" onClick={startVoiceAnswer} disabled={!currentQuestion || isListening}>
-                        {isListening ? '正在聆听...' : '语音回答'}
+                        <button className={isListening ? 'danger-button voice-button' : 'secondary-button voice-button'} type="button" onClick={isListening ? stopVoiceAnswer : startVoiceAnswer} disabled={!currentQuestion}>
+                          {isListening ? '停止录音' : '语音回答'}
                       </button>
                     </div>
                     <textarea className="answer-input" value={answerDraft} onChange={(e) => setAnswerDraft(e.target.value)} disabled={!currentQuestion} placeholder={currentQuestion ? '在这里输入回答；也可以点击“语音回答”自动转文字。' : '开始面试后，这里用于回答当前问题。'} />
@@ -1062,7 +1294,7 @@ export default function App() {
       )}
 
       {tab === 'resumes' && (
-        <main className="grid grid-wide detail-layout">
+        <main className="grid grid-wide detail-layout resumes-layout">
           <section className="card detail-list-card">
             <div className="resume-list-head">
               <h2>我的简历</h2>

@@ -160,6 +160,69 @@ export async function saveRunRecord(record) {
   return run;
 }
 
+export async function createRunRecord(record) {
+  const db = await readDb();
+  const now = new Date().toISOString();
+  const run = {
+    id: record.id || nowId('run'),
+    createdAt: now,
+    updatedAt: now,
+    startedAt: now,
+    status: record.status || 'running',
+    runEvents: [],
+    ...record
+  };
+  db.runs.push(run);
+  await writeDb(db);
+  return run;
+}
+
+export async function appendRunEvent(runId, event) {
+  const db = await readDb();
+  const run = db.runs.find((item) => item.id === runId);
+  if (!run) return null;
+  const row = {
+    id: event.id || nowId('runevent'),
+    runId,
+    runtimeRunId: event.runtimeRunId || run.runtimeRunId || null,
+    sequence: Number.isFinite(event.sequence) ? event.sequence : (db.runEvents.filter((item) => item.runId === runId).length + 1),
+    type: event.type || 'unknown',
+    agent: event.agent || null,
+    status: event.status || null,
+    latencyMs: Number.isFinite(event.latencyMs) ? event.latencyMs : null,
+    errorCode: event.errorCode || null,
+    errorMessage: event.errorMessage || null,
+    payload: event.payload || null,
+    createdAt: new Date().toISOString()
+  };
+  run.runEvents = Array.isArray(run.runEvents) ? run.runEvents : [];
+  run.runEvents.push(row);
+  run.updatedAt = new Date().toISOString();
+  db.runEvents.push(row);
+  await writeDb(db);
+  return row;
+}
+
+export async function finalizeRunRecord(runId, record) {
+  const db = await readDb();
+  const run = db.runs.find((item) => item.id === runId);
+  if (!run) return null;
+  const finishedAt = new Date().toISOString();
+  const startedAt = run.startedAt ? new Date(run.startedAt).getTime() : Date.now();
+  Object.assign(run, {
+    ...record,
+    id: run.id,
+    createdAt: run.createdAt,
+    startedAt: run.startedAt,
+    updatedAt: finishedAt,
+    finishedAt,
+    latencyMs: Number.isFinite(record.latencyMs) ? record.latencyMs : Math.max(0, Date.now() - startedAt),
+    runEvents: db.runEvents.filter((event) => event.runId === runId).sort((a, b) => a.sequence - b.sequence)
+  });
+  await writeDb(db);
+  return run;
+}
+
 export async function listRecentRuns(limit = 10) {
   const db = await readDb();
   return db.runs.slice(-limit).reverse();
