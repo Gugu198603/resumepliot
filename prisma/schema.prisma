@@ -30,6 +30,24 @@ model Resume {
   runs         Run[]
   memories     MemoryItem[]
   corrections  ResumeCorrectionEvent[]
+  versions     ResumeVersion[]
+}
+
+model ResumeVersion {
+  id                   String   @id @default(cuid())
+  resumeId             String
+  jobId                String?
+  label                String?
+  versionNumber        Int
+  contentJson          String
+  candidateProfileJson String?
+  matchScore           Int?
+  createdAt            DateTime @default(now())
+  resume               Resume   @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+
+  @@unique([resumeId, versionNumber])
+  @@index([resumeId, createdAt])
+  @@index([jobId])
 }
 
 model ResumeCorrectionEvent {

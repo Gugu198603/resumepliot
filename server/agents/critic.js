@@ -2,6 +2,7 @@ import { embedBatch, similarity } from '../services/vectorStore.js';
 import { loadPrompt } from '../services/promptLoader.js';
 import { callLLMJson } from '../services/llmClient.js';
 import { formatMemoryContext } from './memoryPrompt.js';
+import { scoreInterviewAnswer } from '../services/interviewReport.js';
 
 export async function critiqueAnswer({ answer, retrieved = [], question = '', memoryContext = null }) {
   const len = answer.trim().length;
@@ -31,13 +32,16 @@ export async function critiqueAnswer({ answer, retrieved = [], question = '', me
     fallbackObject
   });
 
-  return {
-    scores: {
+  const scores = {
       specificity: detailScore,
       technicalDepth: Math.max(3, Math.min(10, detailScore - 1)),
       credibility: isRelevant ? 8 : 5,
       semanticMatch: Number(bestScore.toFixed(3))
-    },
+    };
+  const assessment = scoreInterviewAnswer({ answer, semanticMatch: bestScore, baseScores: scores });
+  return {
+    scores,
+    assessment,
     feedback: result.object.feedback || fallbackObject.feedback,
     mode: result.mode,
     llm: result.meta

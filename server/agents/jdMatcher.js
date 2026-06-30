@@ -58,7 +58,7 @@ export function buildHeuristicSummary({ matchScore = 0, matched = [], gaps = [],
   return parts.join('');
 }
 
-export async function matchJobDescription({ resumeText = '', resumeChunks = [], jdText = '' }) {
+export async function matchJobDescription({ resumeText = '', resumeChunks = [], jdText = '', candidateProfile = null }) {
   const jdChunks = splitRequirements(jdText);
   const resumeContents = (resumeChunks.length
     ? resumeChunks.map((c) => c.content)
@@ -83,13 +83,28 @@ export async function matchJobDescription({ resumeText = '', resumeChunks = [], 
   const jdVecs = vectors.slice(resumeContents.length);
 
   const coverage = jdChunks.map((requirement, i) => {
-    const best = resumeVecs.reduce((max, rv) => Math.max(max, similarity(jdVecs[i], rv)), 0);
-    return { requirement, score: Number(best.toFixed(3)), covered: best >= MATCH_THRESHOLD };
+    const ranked = resumeVecs
+      .map((rv, resumeIndex) => ({ resumeIndex, score: similarity(jdVecs[i], rv) }))
+      .sort((a, b) => b.score - a.score);
+    const best = ranked[0] || { resumeIndex: -1, score: 0 };
+    const evidence = best.resumeIndex >= 0 ? resumeContents[best.resumeIndex] : '';
+    const strength = best.score >= 0.68 ? 'strong' : best.score >= MATCH_THRESHOLD ? 'partial' : 'missing';
+    return {
+      requirement,
+      score: Number(best.score.toFixed(3)),
+      covered: best.score >= MATCH_THRESHOLD,
+      strength,
+      evidence: best.score >= 0.3 ? evidence : '',
+      evidenceIndex: best.resumeIndex >= 0 ? best.resumeIndex : null,
+      evidenceReason: best.score >= MATCH_THRESHOLD
+        ? '简历中存在语义相关的事实片段。'
+        : '未找到足够强的简历证据，不能仅凭关键词视为具备该能力。'
+    };
   });
 
-  const matchScore = Math.round(
-    (coverage.reduce((sum, c) => sum + Math.min(1, Math.max(0, c.score)), 0) / coverage.length) * 100
-  );
+  const semanticScore = coverage.reduce((sum, c) => sum + Math.min(1, Math.max(0, c.score)), 0) / coverage.length;
+  const evidenceScore = coverage.reduce((sum, c) => sum + (c.strength === 'strong' ? 1 : c.strength === 'partial' ? 0.6 : 0), 0) / coverage.length;
+  const matchScore = Math.round((semanticScore * 0.45 + evidenceScore * 0.55) * 100);
   const matched = coverage.filter((c) => c.covered).map((c) => c.requirement);
   const gaps = coverage.filter((c) => !c.covered).map((c) => c.requirement);
   const keywordDiff = buildKeywordDiff(resumeContents.join('\n'), jdText);
@@ -122,6 +137,13 @@ export async function matchJobDescription({ resumeText = '', resumeChunks = [], 
       summary: result.object.summary || fallbackObject.summary,
       matchedKeywords: keywordDiff.matchedKeywords,
       missingKeywords: keywordDiff.missingKeywords
+    },
+    evidenceSummary: {
+      strong: coverage.filter((item) => item.strength === 'strong').length,
+      partial: coverage.filter((item) => item.strength === 'partial').length,
+      missing: coverage.filter((item) => item.strength === 'missing').length,
+      evidenceBackedScore: Math.round(evidenceScore * 100),
+      profileQuality: candidateProfile?.quality || null
     },
     mode: result.mode,
     llm: result.meta

@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { createHash } from 'crypto';
+import { pathToFileURL } from 'url';
 import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
@@ -51,9 +52,21 @@ import { listSources, fetchFromSource } from './services/jobSources/index.js';
 import { startScheduler, getSchedulerStatus, runOnce } from './services/jobScheduler.js';
 import { logger } from './services/logger.js';
 import { generateResumePreview } from './services/resumeGeneration.js';
+import { buildCandidateProfile } from './services/candidateProfile.js';
+import { corsOptionsFromEnv, basicSecurityHeaders, apiTokenAuth, createRateLimit } from './middleware/security.js';
+import { errorHandler, notFoundHandler } from './middleware/http.js';
+import { productRouter } from './routes/productRoutes.js';
 
 const app = express();
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: Number(process.env.MAX_RESUME_UPLOAD_BYTES || 8 * 1024 * 1024), files: 1 },
+  fileFilter(_req, file, callback) {
+    const allowed = new Set(['application/pdf', 'text/plain', 'text/markdown']);
+    const accepted = allowed.has(file.mimetype);
+    callback(accepted ? null : new Error('仅支持 PDF、TXT 或 Markdown 简历。'), accepted);
+  }
+});
 const PORT = Number(process.env.PORT || 8787);
 
 function makeId(prefix) {
@@ -266,8 +279,15 @@ function buildCorrectionDiff(beforeSections = [], afterSections = []) {
   return modules;
 }
 
-app.use(cors());
+app.use(cors(corsOptionsFromEnv()));
+app.use(basicSecurityHeaders);
+app.use(createRateLimit({
+  windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS || 60_000),
+  max: Number(process.env.RATE_LIMIT_MAX || 120)
+}));
+app.use(apiTokenAuth);
 app.use(express.json({ limit: '10mb' }));
+app.use('/api', productRouter);
 
 app.get('/api/health', async (_, res) => res.json({ ok: true, multiAgent: true, vectorProvider, db: await getDatabaseOverview() }));
 app.get('/api/mcp/tools', (_, res) => res.json({ tools: listTools() }));
@@ -447,8 +467,8 @@ app.post('/api/sessions/:id/continue', async (req, res) => {
     const critique = await critiqueAnswer({ answer, retrieved, question: currentQuestion, memoryContext });
     const rewrite = await rewriteArtifacts({ text, answer, feedback: critique?.feedback || [], memoryContext });
     const answeredTurn = lastTurn
-      ? { ...lastTurn, answer, critique: critique?.feedback || [], improvedAnswer: rewrite?.improvedAnswer || '', retrieved, resumeId, depth }
-      : { id: makeId('turn'), question: currentQuestion, answer, critique: critique?.feedback || [], improvedAnswer: rewrite?.improvedAnswer || '', retrieved, resumeId, depth };
+      ? { ...lastTurn, answer, critique: critique?.feedback || [], scores: critique?.scores || {}, assessment: critique?.assessment || null, improvedAnswer: rewrite?.improvedAnswer || '', retrieved, resumeId, depth }
+      : { id: makeId('turn'), question: currentQuestion, answer, critique: critique?.feedback || [], scores: critique?.scores || {}, assessment: critique?.assessment || null, improvedAnswer: rewrite?.improvedAnswer || '', retrieved, resumeId, depth };
     const answeredTurns = lastTurn ? [...turns.slice(0, -1), answeredTurn] : [answeredTurn];
     const interview = await generateInterviewQuestions({ goal: session.goal || session.title || '', retrieved, previousAnswer: answer, previousQuestion: currentQuestion, depth: depth + 1, askedQuestions, memoryContext });
     const questions = interview.questions;
@@ -583,13 +603,17 @@ app.post('/api/agent-run', async (req, res) => {
 function writeSse(res, event, data) {
   res.write(`event: ${event}\n`);
   res.write(`data: ${JSON.stringify(data)}\n\n`);
+  res.flush?.();
 }
 
 app.post('/api/sessions/:id/continue/stream', async (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.socket?.setNoDelay?.(true);
   res.flushHeaders?.();
+  res.write(': connected\n\n');
 
   let closed = false;
   res.on('close', () => {
@@ -617,35 +641,140 @@ app.post('/api/sessions/:id/continue/stream', async (req, res) => {
     const askedQuestions = turns.map((t) => t.question).filter(Boolean);
     const currentQuestion = lastTurn?.question || session.goal || session.title || '请介绍你的经历。';
 
-    push('process_event', { id: 'memory', title: '读取上下文', detail: '正在读取本场面试历史和简历记忆。', status: 'running' });
+    push('process_event', {
+      id: 'memory',
+      title: '读取上下文',
+      detail: '正在读取本场面试历史和简历记忆。',
+      reasoning: [
+        { label: '输入识别', text: `当前问题：${currentQuestion}` },
+        { label: '边界确认', text: `会话已回答 ${depth} 轮，目标是「${session.goal || session.title || '模拟面试'}」。` },
+        { label: '处理意图', text: '先把历史问答和简历记忆取出来，后续评估不能脱离这些事实。' }
+      ],
+      status: 'running'
+    });
     const memoryContext = await loadRuntimeMemory({ goal: session.goal || session.title || '', resumeId, sessionId: session.id });
-    push('process_event', { id: 'memory', title: '读取上下文', detail: `已读取 ${memoryContext.items.length} 条相关记忆。`, status: 'done' });
+    push('process_event', {
+      id: 'memory',
+      title: '读取上下文',
+      detail: `已读取 ${memoryContext.items.length} 条相关记忆。`,
+      reasoning: [
+        { label: '读取结果', text: `命中 ${memoryContext.items.length} 条相关记忆。` },
+        { label: '分布判断', text: Object.entries(memoryContext.buckets || {}).map(([key, value]) => `${key}: ${value}`).join('；') || '没有额外记忆分桶。' },
+        { label: '后续用途', text: '这些记忆会作为回答评估和追问生成的背景约束。' }
+      ],
+      meta: Object.entries(memoryContext.buckets || {}).map(([key, value]) => `${key}: ${value}`),
+      status: 'done'
+    });
 
-    push('process_event', { id: 'retriever', title: '检索相关经历', detail: 'retriever 正在从简历和历史回答中召回依据。', status: 'running' });
+    push('process_event', {
+      id: 'retriever',
+      title: '检索相关经历',
+      detail: 'retriever 正在从简历和历史回答中召回依据。',
+      reasoning: [
+        { label: '检索目标', text: `围绕「${session.goal || session.title || '当前面试目标'}」查找依据。` },
+        { label: '检索范围', text: '同时参考简历正文和本场历史回答。' },
+        { label: '处理意图', text: '先找到相关经历片段，再让 critic 判断回答是否贴合事实。' }
+      ],
+      status: 'running'
+    });
     const retrieval = await retrieveContext({ text, query: session.goal || session.title || '', topK: 3, sessionTurns: turns, resumeId });
     const retrieved = retrieval.retrieved;
-    push('process_event', { id: 'retriever', title: '检索相关经历', detail: `已召回 ${retrieved.length} 条可参考经历。`, status: 'done' });
+    push('process_event', {
+      id: 'retriever',
+      title: '检索相关经历',
+      detail: `已召回 ${retrieved.length} 条可参考经历。`,
+      reasoning: [
+        { label: '召回结果', text: `从 ${retrieval.kbSource || '简历知识库'} 召回 ${retrieved.length} 条候选经历。` },
+        { label: '依据片段', text: retrieved.slice(0, 2).map((item) => String(item.content || '').slice(0, 90)).join(' / ') || '没有召回到明确片段。' },
+        { label: '下一步', text: '把这些依据交给 critic，用来对照用户回答。' }
+      ],
+      meta: retrieved.slice(0, 3).map((item) => String(item.content || '').slice(0, 90)),
+      status: 'done'
+    });
 
-    push('process_event', { id: 'critic', title: '分析你的回答', detail: 'critic 正在评价回答的具体性、可信度和经历匹配度。', status: 'running' });
+    push('process_event', {
+      id: 'critic',
+      title: '分析你的回答',
+      detail: 'critic 正在评价回答的具体性、可信度和经历匹配度。',
+      reasoning: [
+        { label: '回答拆解', text: '先看回答里是否包含具体动作、技术细节、结果和复盘。' },
+        { label: '事实对照', text: '再和召回的简历片段逐项对照，避免出现无依据表达。' },
+        { label: '评分方向', text: '重点看具体性、可信度、语义匹配度和可追问空间。' }
+      ],
+      status: 'running'
+    });
     const critique = await critiqueAnswer({ answer, retrieved, question: currentQuestion, memoryContext });
-    push('process_event', { id: 'critic', title: '分析你的回答', detail: `已生成 ${critique?.feedback?.length || 0} 条反馈。`, status: 'done' });
+    push('process_event', {
+      id: 'critic',
+      title: '分析你的回答',
+      detail: `已生成 ${critique?.feedback?.length || 0} 条反馈。`,
+      reasoning: [
+        { label: '评分结果', text: critique?.scores ? `语义匹配度 ${critique.scores.semanticMatch ?? '-'}，具体性 ${critique.scores.specificity ?? '-'}。` : '已完成回答质量评估。' },
+        { label: '主要问题', text: (critique?.feedback || []).slice(0, 2).join(' / ') || '没有明显问题。' },
+        { label: '下一步', text: '把反馈交给 writer，转成更好的面试表达。' }
+      ],
+      meta: (critique?.feedback || []).slice(0, 3),
+      status: 'done'
+    });
 
-    push('process_event', { id: 'writer', title: '整理反馈表达', detail: 'writer 正在整理更好的回答表达。', status: 'running' });
+    push('process_event', {
+      id: 'writer',
+      title: '整理反馈表达',
+      detail: 'writer 正在整理更好的回答表达。',
+      reasoning: [
+        { label: '改写策略', text: '把 critic 的问题转成“背景-行动-结果-复盘”的面试表达。' },
+        { label: '事实约束', text: '只使用当前简历、回答和检索记忆中已有的信息。' },
+        { label: '输出目标', text: '生成一版可参考表达，而不是替用户编造经历。' }
+      ],
+      status: 'running'
+    });
     const rewrite = await rewriteArtifacts({ text, answer, feedback: critique?.feedback || [], memoryContext });
-    push('process_event', { id: 'writer', title: '整理反馈表达', detail: rewrite?.improvedAnswer ? '已整理出可参考的改进回答。' : '已完成反馈整理。', status: 'done' });
+    push('process_event', {
+      id: 'writer',
+      title: '整理反馈表达',
+      detail: rewrite?.improvedAnswer ? '已整理出可参考的改进回答。' : '已完成反馈整理。',
+      reasoning: [
+        { label: '保留内容', text: '保留用户回答中已有的事实和技术上下文。' },
+        { label: '表达调整', text: rewrite?.improvedAnswer ? String(rewrite.improvedAnswer).slice(0, 140) : '没有生成额外改写内容。' },
+        { label: '风险控制', text: '不新增无法验证的简历实体或夸张指标。' }
+      ],
+      meta: rewrite?.improvedAnswer ? [String(rewrite.improvedAnswer).slice(0, 120)] : [],
+      status: 'done'
+    });
 
     const answeredTurn = lastTurn
-      ? { ...lastTurn, answer, critique: critique?.feedback || [], improvedAnswer: rewrite?.improvedAnswer || '', retrieved, resumeId, depth }
-      : { id: makeId('turn'), question: currentQuestion, answer, critique: critique?.feedback || [], improvedAnswer: rewrite?.improvedAnswer || '', retrieved, resumeId, depth };
+      ? { ...lastTurn, answer, critique: critique?.feedback || [], scores: critique?.scores || {}, assessment: critique?.assessment || null, improvedAnswer: rewrite?.improvedAnswer || '', retrieved, resumeId, depth }
+      : { id: makeId('turn'), question: currentQuestion, answer, critique: critique?.feedback || [], scores: critique?.scores || {}, assessment: critique?.assessment || null, improvedAnswer: rewrite?.improvedAnswer || '', retrieved, resumeId, depth };
     const answeredTurns = lastTurn ? [...turns.slice(0, -1), answeredTurn] : [answeredTurn];
 
-    push('process_event', { id: 'interviewer', title: '生成下一轮追问', detail: 'interviewer 正在基于你的回答继续追问。', status: 'running' });
+    push('process_event', {
+      id: 'interviewer',
+      title: '生成下一轮追问',
+      detail: 'interviewer 正在基于你的回答继续追问。',
+      reasoning: [
+        { label: '追问依据', text: '综合当前回答、critic 反馈和召回经历。' },
+        { label: '追问方向', text: '优先追问回答中的薄弱点、关键技术选择或高价值项目细节。' },
+        { label: '目标', text: '让下一题能继续验证能力，而不是随机换话题。' }
+      ],
+      status: 'running'
+    });
     const interview = await generateInterviewQuestions({ goal: session.goal || session.title || '', retrieved, previousAnswer: answer, previousQuestion: currentQuestion, depth: depth + 1, askedQuestions, memoryContext });
     const questions = interview.questions;
     const question = questions?.detail?.[0] || questions?.basic?.[0] || '请继续介绍你的经历。';
     const nextTurn = { id: makeId('turn'), question, answer: '', critique: [], improvedAnswer: '', retrieved: [], resumeId, depth: depth + 1, stage: interview.stage };
     const updatedSession = await updateSessionTurns(session.id, [...answeredTurns, nextTurn]);
-    push('process_event', { id: 'interviewer', title: '生成下一轮追问', detail: '下一轮问题已生成。', status: 'done' });
+    push('process_event', {
+      id: 'interviewer',
+      title: '生成下一轮追问',
+      detail: '下一轮问题已生成。',
+      reasoning: [
+        { label: '阶段判断', text: `本轮进入「${interview.stage || '追问'}」阶段。` },
+        { label: '问题生成', text: question },
+        { label: '为什么问这个', text: '这个问题用于继续验证上一轮回答中最值得深挖的能力点。' }
+      ],
+      meta: [question],
+      status: 'done'
+    });
     push('run_complete', { session: updatedSession, turn: nextTurn, answeredTurn, critique, rewrite, questions, depth: depth + 1, stage: interview.stage, retrieved, memoryContext, retrievalMeta: { resumeResults: retrieval.resumeResults, historyResults: retrieval.historyResults, kbSource: retrieval.kbSource, resumeId: retrieval.resumeId } });
     res.end();
   } catch (error) {
@@ -659,7 +788,10 @@ app.post('/api/agent-run/stream', async (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.socket?.setNoDelay?.(true);
   res.flushHeaders?.();
+  res.write(': connected\n\n');
 
   let closed = false;
   res.on('close', () => {
@@ -867,9 +999,10 @@ app.post('/api/jd-match', async (req, res) => {
     if (!job) {
       job = await saveJobDescription({ title, company, sourceUrl, source: 'manual', text: jdContent });
     }
-    const result = await matchJobDescription({ resumeText, resumeChunks, jdText: jdContent });
+    const candidateProfile = buildCandidateProfile(persistedResume || { text: resumeText, sections: splitSections(resumeText) });
+    const result = await matchJobDescription({ resumeText, resumeChunks, jdText: jdContent, candidateProfile });
     const match = await saveJobMatch({ jobId: job.id, resumeId: persistedResume?.id || resumeId || null, matchScore: result.matchScore, result });
-    res.json({ resumeId: persistedResume?.id || resumeId || null, jobId: job.id, matchId: match.id, ...result });
+    res.json({ resumeId: persistedResume?.id || resumeId || null, jobId: job.id, matchId: match.id, candidateProfile, ...result });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -905,10 +1038,17 @@ app.post('/api/jobs/fetch', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`ResumePilot Web App server running at http://localhost:${PORT}`);
-  const scheduler = startScheduler();
-  if (scheduler.enabled) {
-    console.log(`Job scheduler enabled: sources=[${scheduler.sources.join(', ')}], interval=${scheduler.intervalMs}ms`);
-  }
-});
+app.use(notFoundHandler);
+app.use(errorHandler);
+
+export { app };
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  app.listen(PORT, () => {
+    console.log(`ResumePilot Web App server running at http://localhost:${PORT}`);
+    const scheduler = startScheduler();
+    if (scheduler.enabled) {
+      console.log(`Job scheduler enabled: sources=[${scheduler.sources.join(', ')}], interval=${scheduler.intervalMs}ms`);
+    }
+  });
+}

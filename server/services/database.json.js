@@ -23,7 +23,8 @@ function normalizeDb(db = {}) {
     runs: Array.isArray(db.runs) ? db.runs : [],
     runEvents: Array.isArray(db.runEvents) ? db.runEvents : [],
     jobs: Array.isArray(db.jobs) ? db.jobs : [],
-    jobMatches: Array.isArray(db.jobMatches) ? db.jobMatches : []
+    jobMatches: Array.isArray(db.jobMatches) ? db.jobMatches : [],
+    resumeVersions: Array.isArray(db.resumeVersions) ? db.resumeVersions : []
   };
 }
 
@@ -129,9 +130,39 @@ export async function deleteResume(id) {
   const before = db.resumes.length;
   db.resumes = db.resumes.filter((item) => item.id !== id);
   db.corrections = db.corrections.filter((item) => item.resumeId !== id);
+  db.resumeVersions = db.resumeVersions.filter((item) => item.resumeId !== id);
   const removed = db.resumes.length < before;
   if (removed) await writeDb(db);
   return removed;
+}
+
+export async function saveResumeVersion(record = {}) {
+  const db = await readDb();
+  const versions = db.resumeVersions.filter((item) => item.resumeId === record.resumeId);
+  const version = {
+    id: nowId('resumeversion'),
+    resumeId: record.resumeId,
+    jobId: record.jobId || null,
+    label: record.label || `版本 ${versions.length + 1}`,
+    versionNumber: versions.length + 1,
+    content: record.content || {},
+    candidateProfile: record.candidateProfile || null,
+    matchScore: Number.isFinite(record.matchScore) ? Math.round(record.matchScore) : null,
+    createdAt: new Date().toISOString()
+  };
+  db.resumeVersions.push(version);
+  await writeDb(db);
+  return version;
+}
+
+export async function listResumeVersions(resumeId) {
+  const db = await readDb();
+  return db.resumeVersions.filter((item) => item.resumeId === resumeId).sort((a, b) => b.versionNumber - a.versionNumber);
+}
+
+export async function getResumeVersion(id) {
+  const db = await readDb();
+  return db.resumeVersions.find((item) => item.id === id) || null;
 }
 
 export async function saveRunRecord(record) {

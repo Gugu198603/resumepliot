@@ -236,6 +236,11 @@ export interface Turn {
   resumeId?: string | null;
   depth?: number;
   stage?: string;
+  scores?: Record<string, number>;
+  assessment?: {
+    overall: number;
+    scores: Record<string, number>;
+  } | null;
   createdAt?: string;
 }
 
@@ -254,6 +259,9 @@ export interface JdCoverageItem {
   requirement: string;
   score: number;
   covered: boolean;
+  strength?: 'strong' | 'partial' | 'missing';
+  evidence?: string;
+  evidenceReason?: string;
 }
 
 export interface JdGapReport {
@@ -274,6 +282,23 @@ export interface JdMatchResult {
   gapReport?: JdGapReport | null;
   mode: LlmMode;
   llm?: LlmMeta;
+  evidenceSummary?: {
+    strong: number;
+    partial: number;
+    missing: number;
+    evidenceBackedScore: number;
+  };
+}
+
+export interface ResumeVersion {
+  id: string;
+  resumeId: string;
+  jobId?: string | null;
+  label?: string;
+  versionNumber: number;
+  content: Record<string, unknown>;
+  matchScore?: number | null;
+  createdAt: string;
 }
 
 export interface JobDescription {

@@ -171,6 +171,7 @@ export async function deleteResume(id) {
       client.run.updateMany({ where: { resumeId: id }, data: { resumeId: null } }),
       client.memoryItem.updateMany({ where: { resumeId: id }, data: { resumeId: null } }),
       client.resumeCorrectionEvent.deleteMany({ where: { resumeId: id } }),
+      client.resumeVersion.deleteMany({ where: { resumeId: id } }),
       client.resume.delete({ where: { id } })
     ]);
     return true;
@@ -516,6 +517,54 @@ export async function listJobMatches(limit = 50) {
     job: mapJob(row.job),
     createdAt: row.createdAt
   }));
+}
+
+function mapResumeVersion(record) {
+  if (!record) return null;
+  return {
+    id: record.id,
+    resumeId: record.resumeId,
+    jobId: record.jobId,
+    label: record.label,
+    versionNumber: record.versionNumber,
+    content: fromJsonString(record.contentJson, {}) || {},
+    candidateProfile: fromJsonString(record.candidateProfileJson, null),
+    matchScore: record.matchScore,
+    createdAt: record.createdAt
+  };
+}
+
+export async function saveResumeVersion(record = {}) {
+  const client = await getPrisma();
+  return await client.$transaction(async (tx) => {
+    const latest = await tx.resumeVersion.findFirst({
+      where: { resumeId: record.resumeId },
+      orderBy: { versionNumber: 'desc' }
+    });
+    const versionNumber = (latest?.versionNumber || 0) + 1;
+    return mapResumeVersion(await tx.resumeVersion.create({
+      data: {
+        resumeId: record.resumeId,
+        jobId: record.jobId || null,
+        label: record.label || `版本 ${versionNumber}`,
+        versionNumber,
+        contentJson: toJsonString(record.content || {}),
+        candidateProfileJson: toJsonString(record.candidateProfile || null),
+        matchScore: Number.isFinite(record.matchScore) ? Math.round(record.matchScore) : null
+      }
+    }));
+  });
+}
+
+export async function listResumeVersions(resumeId) {
+  const client = await getPrisma();
+  const rows = await client.resumeVersion.findMany({ where: { resumeId }, orderBy: { versionNumber: 'desc' } });
+  return rows.map(mapResumeVersion);
+}
+
+export async function getResumeVersion(id) {
+  const client = await getPrisma();
+  return mapResumeVersion(await client.resumeVersion.findUnique({ where: { id } }));
 }
 
 export function isPrismaAvailable() {

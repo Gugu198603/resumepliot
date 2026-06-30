@@ -158,3 +158,18 @@ export async function listJobMatches(limit = 50) {
   const provider = await getProvider();
   return await provider.listJobMatches(limit);
 }
+
+export async function saveResumeVersion(record) {
+  const provider = await getProvider();
+  return await provider.saveResumeVersion(record);
+}
+
+export async function listResumeVersions(resumeId) {
+  const provider = await getProvider();
+  return await provider.listResumeVersions(resumeId);
+}
+
+export async function getResumeVersion(id) {
+  const provider = await getProvider();
+  return await provider.getResumeVersion(id);
+}

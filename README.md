@@ -8,6 +8,8 @@
 
 ## 当前已经做好的功能
 
+- 统一 Candidate Profile：技能、事实主张、量化指标、证据 ID 与待澄清问题
+- JD 证据匹配：逐条要求展示强证据 / 部分证据 / 证据缺失，并计算证据支持分
 - PDF / 文本简历导入与结构化拆分
 - 风险术语识别
 - 真实语义检索（BGE-M3 embedding + 内存 / Qdrant 向量库）
@@ -19,6 +21,25 @@
 - 模拟面试连续追问：背景澄清 → 方案细节 → 验证与结果 → 反思与拓展四段递进，引用上一轮回答去重深挖
 - 招聘岗位抓取：Greenhouse / Lever 公开 ATS 适配器 + 定时调度器（去重入库）
 - LLM 调用 trace（mode / 延迟 / token / model）在 Run 详情面板可见
+- 简历版本管理与字段级 diff；岗位定向版本可导出 DOCX，浏览器打印导出 PDF
+- 面试七维评分与会话复盘：具体性、技术深度、可信度、STAR、量化、清晰度、岗位相关性
+- 上传大小/类型限制、URL SSRF 防护、CORS 白名单、限流与可选 Bearer Token
+
+## 产品闭环
+
+1. 导入简历，系统生成统一 Candidate Profile 和可追溯证据。
+2. 粘贴或抓取目标 JD，得到语义分、证据支持分和逐项差距。
+3. 基于目标岗位生成简历，在事实校验通过后保存为版本。
+4. 对版本做字段级 diff，并导出 DOCX 或通过浏览器打印为 PDF。
+5. 使用同一份简历开始模拟面试；每轮保存量化评分，最终在面试记录中查看薄弱项。
+
+相关接口：
+
+- `GET /api/resumes/:id/profile`
+- `GET|POST /api/resumes/:id/versions`
+- `GET /api/resume-versions/:id/diff?baseId=...`
+- `GET /api/resume-versions/:id/export.docx`
+- `GET /api/sessions/:id/report`
 
 ## 目录结构
 
@@ -42,6 +63,12 @@ npm run dev
 
 ```bash
 npm test
+```
+
+真实 HTTP/SSE 集成测试需要监听临时本机端口，单独运行：
+
+```bash
+RUN_HTTP_INTEGRATION=true node --test tests/apiIntegration.test.js
 ```
 
 覆盖：简历解析、jdMatcher、resumeComparer（多简历指标/关键词差异）、interviewer（连续追问深度递进）、llmClient、skill workflow、JSON 数据层（含 Session.resumeId 持久化、resume 重命名/删除、JobDescription dedupe、JobMatch）、jobSources 适配器层（含关键词/地域过滤）与调度器去重、LLM 成本与延迟聚合。

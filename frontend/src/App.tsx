@@ -15,6 +15,7 @@ import type {
   QdrantReadiness,
   Resume,
   ResumeGenerationPreview,
+  ResumeVersion,
     Run,
     RunEvent,
   Session
@@ -46,7 +47,27 @@ type AgentProgressStep = {
   title: string;
   detail: string;
   status: AgentProgressStatus;
+  note?: string;
+  meta?: string[];
+  reasoning?: Array<{ label: string; text: string }>;
 };
+
+function cleanThoughtText(value?: string) {
+  return String(value || '').replace(/^判断：/, '').trim();
+}
+
+function compactReasoning(items: Array<{ label: string; text?: unknown }>) {
+  return items
+    .map((item) => ({ label: item.label, text: String(item.text || '').trim() }))
+    .filter((item) => item.text);
+}
+
+function reasoningNarrative(step: AgentProgressStep) {
+  if (step.reasoning?.length) {
+    return step.reasoning.map((item) => `${item.label}：${cleanThoughtText(item.text)}`).join(' ');
+  }
+  return cleanThoughtText(step.note || step.detail);
+}
 
 const MAIN_NAV_ITEMS: Array<{ key: string; label: string; target: Tab; displayTab?: DisplayTab }> = [
   { key: 'workbench', label: '工作台', target: 'workspace', displayTab: 'overview' },
@@ -315,13 +336,17 @@ export default function App() {
   const [jdUrl, setJdUrl] = useState(persistedState.jdUrl || '');
   const [generationAdjustment, setGenerationAdjustment] = useState(persistedState.generationAdjustment || '');
   const [generationPreview, setGenerationPreview] = useState<ResumeGenerationPreview | null>(null);
+  const [resumeVersions, setResumeVersions] = useState<ResumeVersion[]>([]);
   const [previewDensity, setPreviewDensity] = useState<PreviewDensity>('compact');
   const [isListening, setIsListening] = useState(false);
   const [speechHint, setSpeechHint] = useState('');
   const [importNotice, setImportNotice] = useState('');
   const [agentProgress, setAgentProgress] = useState<AgentProgressStep[]>([]);
+  const [agentProgressCollapsed, setAgentProgressCollapsed] = useState(false);
+  const [inspectedProgressId, setInspectedProgressId] = useState<string | null>(null);
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const voiceStopRequestedRef = useRef(false);
+  const agentProgressListRef = useRef<HTMLDivElement | null>(null);
 
   const currentQuestion = useMemo(() => {
     const turns = selectedSession?.turns || [];
@@ -330,12 +355,25 @@ export default function App() {
   }, [activeQuestion, selectedSession]);
 
   const answeredTurns = useMemo(() => (selectedSession?.turns || []).filter((turn) => String(turn.answer || '').trim()).length, [selectedSession]);
+  const agentProgressSummary = useMemo(() => {
+    const done = agentProgress.filter((step) => step.status === 'done').length;
+    const running = agentProgress.find((step) => step.status === 'running');
+    return running ? `正在处理：${running.title}` : `${done}/${agentProgress.length} 个步骤已完成`;
+  }, [agentProgress]);
+  const liveProgressId = useMemo(() => agentProgress.find((step) => step.status === 'running')?.id || null, [agentProgress]);
+  const expandedProgressId = inspectedProgressId || liveProgressId;
+
+  useEffect(() => {
+    const node = agentProgressListRef.current;
+    if (!node || inspectedProgressId) return;
+    node.scrollTo({ top: node.scrollHeight, behavior: 'smooth' });
+  }, [agentProgress, inspectedProgressId]);
 
   function updateAgentProgress(step: AgentProgressStep) {
     setAgentProgress((current) => {
       const exists = current.some((item) => item.id === step.id);
       const next = exists ? current.map((item) => item.id === step.id ? { ...item, ...step } : item) : [...current, step];
-      return next.slice(-6);
+      return next.slice(-12);
     });
   }
 
@@ -346,33 +384,99 @@ export default function App() {
   function progressFromRunEvent(event: RunEvent) {
     const payload = (event.payload && typeof event.payload === 'object' && !Array.isArray(event.payload)) ? event.payload as Record<string, any> : {};
     if (event.type === 'run_start') {
-      updateAgentProgress({ id: 'start', title: '启动协作流程', detail: '正在读取目标、简历和历史上下文。', status: 'running' });
+      updateAgentProgress({
+        id: 'start',
+        title: '启动协作流程',
+        detail: '正在读取目标、简历和历史上下文。',
+        note: '先确认本轮任务的输入边界：目标是什么、是否已有回答、需要引用哪份简历和哪段历史。',
+        reasoning: compactReasoning([
+          { label: '输入识别', text: `目标：${goal || '模拟面试'}。` },
+          { label: '边界确认', text: '先确认本轮是否已有回答，以及应引用哪份简历和哪场面试历史。' },
+          { label: '下一步', text: '把上下文交给 planner/retriever，避免后续问题脱离事实。' }
+        ]),
+        status: 'running'
+      });
     }
     if (event.type === 'memory_loaded') {
       completeProgress('start', `已读取 ${payload.total ?? 0} 条相关记忆。`);
     }
     if (event.type === 'step_start') {
       const labels: Record<string, [string, string]> = {
-        parser: ['解析简历内容', '识别简历模块、风险点和可追问经历。'],
-        planner: ['制定出题计划', '根据目标决定下一步由哪个 Agent 处理。'],
-        retriever: ['检索相关经历', '从简历和历史问答中召回可追问片段。'],
-        interviewer: ['生成面试问题', '面试官 Agent 正在组织第一轮问题。'],
-        critic: ['分析你的回答', '评价回答的具体性、可信度和经历匹配度。'],
-        writer: ['整理反馈表达', '根据评价整理更好的回答表达。']
+        parser: ['解析简历内容', '把原始简历拆成可被追问和验证的结构化模块。'],
+        planner: ['制定出题计划', '判断当前最该深挖背景、项目、技术细节还是表达质量。'],
+        retriever: ['检索相关经历', '从简历和历史问答中找出本轮回答必须对齐的事实依据。'],
+        interviewer: ['生成面试问题', '基于目标和依据形成下一轮追问方向。'],
+        critic: ['分析你的回答', '判断回答是否具体、可信、贴合问题，并找出薄弱点。'],
+        writer: ['整理反馈表达', '把评估结论转成更适合面试场景的回答表达。']
       };
       const [title, detail] = labels[event.agent || ''] || ['执行协作步骤', 'Agent 正在处理当前任务。'];
-      updateAgentProgress({ id: event.agent || `step-${event.sequence}`, title, detail, status: 'running' });
+      updateAgentProgress({
+        id: event.agent || `step-${event.sequence}`,
+        title,
+        detail,
+        note: detail,
+        reasoning: compactReasoning([
+          { label: '当前任务', text: detail },
+          { label: '处理方式', text: event.agent === 'retriever' ? '先召回简历和历史回答中的事实片段。' : event.agent === 'critic' ? '把用户回答和事实依据逐项对比。' : event.agent === 'interviewer' ? '根据薄弱点和高价值经历生成追问。' : '读取共享上下文，形成下一步判断。' }
+        ]),
+        status: 'running'
+      });
     }
     if (event.type === 'rag_retrieval') {
       const count = Array.isArray(payload.retrieved) ? payload.retrieved.length : 0;
-      updateAgentProgress({ id: 'retriever', title: '检索相关经历', detail: `已召回 ${count} 条可参考经历，准备交给面试官 Agent。`, status: 'done' });
+      const evidence = Array.isArray(payload.retrieved)
+        ? payload.retrieved.slice(0, 3).map((item: Record<string, unknown>) => String(item.content || '').slice(0, 90)).filter(Boolean)
+        : [];
+      updateAgentProgress({
+        id: 'retriever',
+        title: '检索相关经历',
+        detail: `已召回 ${count} 条可参考经历，准备交给面试官 Agent。`,
+        note: `本轮回答需要优先围绕这 ${count} 条经历判断是否贴合事实，避免脱离简历内容泛泛而谈。`,
+        meta: evidence,
+        reasoning: compactReasoning([
+          { label: '检索问题', text: `围绕「${goal || '当前面试目标'}」查找可引用经历。` },
+          { label: '依据来源', text: `${payload.kbSource || '简历知识库'}，向量引擎 ${payload.vectorProvider || 'memory'}。` },
+          { label: '筛选结果', text: `取回 ${count} 条候选片段，优先用于检查回答是否贴合事实。` }
+        ]),
+        status: 'done'
+      });
     }
     if (event.type === 'agent_observation') {
       updateAgentProgress({
         id: event.agent || `observation-${event.sequence}`,
         title: event.agent === 'interviewer' ? '生成面试问题' : event.agent === 'planner' ? '制定出题计划' : event.agent === 'retriever' ? '检索相关经历' : '完成协作步骤',
-        detail: payload.observation || payload.proposal || '该 Agent 已完成当前步骤。',
+        detail: '该 Agent 已形成阶段性结论。',
+        note: payload.observation || payload.proposal || '该 Agent 已完成当前步骤。',
+        meta: [
+          payload.proposal ? `下一步依据：${payload.proposal}` : '',
+          payload.confidence !== undefined ? `置信度：${Math.round(Number(payload.confidence) * 100)}%` : '',
+          payload.nextAction ? `下一步：${payload.nextAction}` : ''
+        ].filter(Boolean),
+        reasoning: compactReasoning([
+          { label: '观察', text: payload.observation },
+          { label: '推导', text: payload.proposal },
+          { label: '路由', text: payload.nextAction ? `因此下一步交给 ${payload.nextAction}。` : '该节点不再继续路由。' }
+        ]),
         status: 'done'
+      });
+    }
+    if (event.type === 'orchestrator_decision') {
+      updateAgentProgress({
+        id: `orchestrator-${event.sequence}`,
+        title: '编排决策',
+        detail: `Orchestrator 选择 ${event.agent || '下一位 Agent'} 继续处理。`,
+        note: payload.reason === 'bootstrap' ? '当前还没有足够上下文，先启动基础解析和规划。' : '根据 planner 的建议和共享 workspaceState，当前最合适的下一步是交给这个 Agent。',
+        meta: [
+          payload.plannerNextAgent ? `Planner 建议：${payload.plannerNextAgent}` : '',
+          payload.workspaceNextAction ? `Workspace 下一步：${payload.workspaceNextAction}` : '',
+          Array.isArray(payload.completedAgents) && payload.completedAgents.length ? `已完成：${payload.completedAgents.join('、')}` : ''
+        ].filter(Boolean),
+        reasoning: compactReasoning([
+          { label: '已知状态', text: Array.isArray(payload.completedAgents) && payload.completedAgents.length ? `已经完成 ${payload.completedAgents.join('、')}。` : '当前处于协作启动阶段。' },
+          { label: '决策依据', text: payload.reason === 'bootstrap' ? '上下文不足，先走基础解析和规划。' : '结合 planner 建议和共享 workspaceState。' },
+          { label: '下一步', text: `选择 ${event.agent || '下一位 Agent'} 处理。` }
+        ]),
+        status: 'running'
       });
     }
     if (event.type === 'run_success') {
@@ -495,6 +599,7 @@ export default function App() {
           createdAt: new Date().toISOString()
         };
         upsertRun(liveRun);
+        completeProgress('connect', '流式通道已连接，开始接收协作事件。');
         setLoading('Agent 已启动，正在实时协作...');
       } else if (event === 'run_event') {
         if (activeRunId) appendRunEvent(activeRunId, data as RunEvent);
@@ -563,6 +668,7 @@ export default function App() {
       if (!raw) return;
       const data = JSON.parse(raw);
       if (event === 'process_event') {
+        completeProgress('submit', '流式通道已连接，开始分析回答。');
         updateAgentProgress(data as AgentProgressStep);
         setLoading(data.detail || data.title || 'Agent 正在协作...');
       } else if (event === 'run_complete') {
@@ -612,7 +718,12 @@ export default function App() {
   async function runAgents() {
     if (!resumeText.trim()) return;
     setLoading('正在启动流式 Agent 协作...');
-    setAgentProgress([]);
+    setDisplayTab('overview');
+    setAgentProgress([
+      { id: 'connect', title: '连接实时通道', detail: '正在建立流式连接，随后会逐步显示处理进度。', status: 'running' }
+    ]);
+    setInspectedProgressId(null);
+    setAgentProgressCollapsed(false);
     setSelectedSession(null);
     setActiveQuestion('');
     setActiveCritique([]);
@@ -652,7 +763,12 @@ export default function App() {
   async function continueSession(payload: { text: string; answer: string }) {
     if (!selectedSession?.id) return;
     setLoading('正在分析回答并生成追问...');
-    setAgentProgress([]);
+    setDisplayTab('overview');
+    setAgentProgress([
+      { id: 'submit', title: '提交回答', detail: '回答已提交，正在等待实时分析事件返回。', status: 'running' }
+    ]);
+    setInspectedProgressId(null);
+    setAgentProgressCollapsed(false);
     const data = await streamSessionContinue({ ...payload, resumeId: parseResult?.resumeId || selectedSession?.resumeId || null });
     if (!data) return;
     setSelectedSession(data.session || null);
@@ -704,6 +820,25 @@ export default function App() {
 
   function updateGeneratedResume(resume: Record<string, unknown>) {
     setGenerationPreview((prev) => prev ? { ...prev, resume } : prev);
+  }
+
+  async function saveGeneratedVersion() {
+    const resumeId = parseResult?.resumeId || selectedSession?.resumeId || selectedResume?.id || null;
+    if (!resumeId || !generationPreview?.resume) return;
+    setLoading('正在保存简历版本...');
+    const res = await fetch(`/api/resumes/${resumeId}/versions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        content: generationPreview.resume,
+        jobId: selectedJobId || null,
+        matchScore: jdResult?.matchScore ?? null,
+        label: selectedJobId ? `岗位定向版 · ${jobs.find((job) => job.id === selectedJobId)?.title || '目标岗位'}` : undefined
+      })
+    });
+    const data = await res.json();
+    if (data.version) setResumeVersions((current) => [data.version, ...current]);
+    setLoading(null);
   }
 
   function previewGeneratedPdf() {
@@ -1047,17 +1182,62 @@ export default function App() {
                     <p>{currentQuestion ? '请在下方输入或语音回答，然后提交，系统会继续追问并给出反馈。' : '当前还没有待回答的问题。'}</p>
                   </div>
                     {agentProgress.length ? (
-                      <div className="agent-progress-panel">
-                        <h4>Agent 协作过程</h4>
-                        <div className="agent-progress-list">
-                          {agentProgress.map((step) => (
-                            <div className={`agent-progress-step ${step.status}`} key={step.id}>
-                              <span>{step.status === 'running' ? '进行中' : step.status === 'done' ? '完成' : '失败'}</span>
-                              <strong>{step.title}</strong>
-                              <p>{step.detail}</p>
+                        <div className={agentProgressCollapsed ? 'agent-progress-panel collapsed' : 'agent-progress-panel'}>
+                          <div className="agent-progress-head">
+                            <div>
+                              <h4>AI 思考过程</h4>
+                              <p>{agentProgressSummary}。这里展示每个 Agent 的显式分析路径：看了什么、怎么判断、下一步为什么这么走。</p>
                             </div>
-                          ))}
-                        </div>
+                            <div className="agent-progress-head-actions">
+                              {inspectedProgressId ? (
+                                <button className="secondary-button collapse-button" type="button" onClick={() => setInspectedProgressId(null)}>
+                                  回到实时
+                                </button>
+                              ) : null}
+                              <button className="secondary-button collapse-button" type="button" onClick={() => setAgentProgressCollapsed((value) => !value)}>
+                                {agentProgressCollapsed ? '展开' : '收起'}
+                              </button>
+                            </div>
+                          </div>
+                          {!agentProgressCollapsed ? <div className="agent-progress-list" ref={agentProgressListRef}>
+                          {agentProgress.map((step) => {
+                            const expanded = step.id === expandedProgressId || (!expandedProgressId && step.status !== 'done');
+                            return (
+                              <div className={`agent-progress-step ${step.status} ${expanded ? 'expanded' : 'folded'}`} key={step.id}>
+                                <button
+                                  className="agent-progress-status"
+                                  type="button"
+                                  onClick={() => setInspectedProgressId(expanded && inspectedProgressId === step.id ? null : step.id)}
+                                  title={expanded ? '收起过程' : '查看过程'}
+                                >
+                                  {step.status === 'running' ? '思考中' : expanded ? '收起' : '查看'}
+                                </button>
+                                <div className="agent-progress-body">
+                                  <div className="agent-progress-title-row">
+                                    <strong>{step.title}</strong>
+                                    {step.status === 'done' ? <small>{step.detail}</small> : null}
+                                  </div>
+                                  {expanded ? (
+                                    <div className="agent-thought-stream">
+                                      {step.meta?.length ? (
+                                        <div className="agent-loaded-info">
+                                          <span>加载信息</span>
+                                          <div>
+                                            {step.meta.slice(0, 3).map((item, index) => <em key={`${step.id}-loaded-${index}`}>{item}</em>)}
+                                          </div>
+                                        </div>
+                                      ) : null}
+                                      <div className="agent-thinking-entry">
+                                        <b>{step.status === 'running' ? `正在思考：${step.title}` : step.title}</b>
+                                        <p>{reasoningNarrative(step)}</p>
+                                      </div>
+                                    </div>
+                                  ) : null}
+                                </div>
+                              </div>
+                            );
+                          })}
+                          </div> : null}
                       </div>
                     ) : null}
                   <div className="answer-board">
@@ -1159,6 +1339,8 @@ export default function App() {
                                   <option value="dense">压缩</option>
                                 </select>
                                 <button className="secondary-button" onClick={previewGeneratedPdf}>浏览器 PDF 预览</button>
+                                <button onClick={saveGeneratedVersion}>保存版本</button>
+                                {resumeVersions[0] ? <a className="button-link" href={`/api/resume-versions/${resumeVersions[0].id}/export.docx`}>导出 DOCX</a> : null}
                               </div>
                             </div>
                             <div className="generated-workspace">
@@ -1255,6 +1437,23 @@ export default function App() {
                           </div>
                         </div>
                       )}
+                      {jdResult.evidenceSummary ? (
+                        <div className="detail-grid two-col">
+                          <div className="detail-card"><span>证据支持分</span><strong>{jdResult.evidenceSummary.evidenceBackedScore}/100</strong></div>
+                          <div className="detail-card"><span>证据分布</span><strong>{jdResult.evidenceSummary.strong} 强 · {jdResult.evidenceSummary.partial} 部分 · {jdResult.evidenceSummary.missing} 缺失</strong></div>
+                        </div>
+                      ) : null}
+                      {(jdResult.coverage || []).length ? (
+                        <div className="jd-suggestions">
+                          <h5>岗位要求与简历证据</h5>
+                          {(jdResult.coverage || []).map((item, index) => (
+                            <div className="validation-item" key={`${item.requirement}-${index}`}>
+                              <strong>{item.strength === 'strong' ? '强证据' : item.strength === 'partial' ? '部分证据' : '证据缺失'} · {item.requirement}</strong>
+                              <p>{item.evidence || item.evidenceReason || '简历中未找到可引用事实。'}</p>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
                       <div className="jd-columns">
                         <div className="jd-col">
                           <h5>已匹配</h5>
