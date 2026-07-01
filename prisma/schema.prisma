@@ -166,6 +166,25 @@ model JobMatch {
   job        JobDescription @relation(fields: [jobId], references: [id])
 }
 
+model Application {
+  id              String   @id @default(cuid())
+  jobId           String
+  resumeVersionId String?
+  sessionIdsJson  String?
+  status          String   @default("saved")
+  appliedAt       DateTime?
+  interviewAt     DateTime?
+  nextAction      String?
+  result          String?
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([status, updatedAt])
+  @@index([jobId])
+  @@index([resumeVersionId])
+}
+
 model MemoryItem {
   id                String          @id @default(cuid())
   userId            String?

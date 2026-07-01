@@ -3,4 +3,5 @@
 @import './features/resume-generation/resume-generation.css';
 @import './styles/operations.css';
 @import './features/job-match/job-match.css';
+@import './features/applications/applications.css';
 @import './styles/responsive.css';

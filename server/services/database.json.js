@@ -24,7 +24,8 @@ function normalizeDb(db = {}) {
     runEvents: Array.isArray(db.runEvents) ? db.runEvents : [],
     jobs: Array.isArray(db.jobs) ? db.jobs : [],
     jobMatches: Array.isArray(db.jobMatches) ? db.jobMatches : [],
-    resumeVersions: Array.isArray(db.resumeVersions) ? db.resumeVersions : []
+    resumeVersions: Array.isArray(db.resumeVersions) ? db.resumeVersions : [],
+    applications: Array.isArray(db.applications) ? db.applications : []
   };
 }
 
@@ -409,4 +410,72 @@ export async function listJobMatches(limit = 50) {
   const db = await readDb();
   const jobsById = new Map(db.jobs.map((j) => [j.id, j]));
   return db.jobMatches.slice(-limit).reverse().map((m) => ({ ...m, job: jobsById.get(m.jobId) || null }));
+}
+
+function enrichApplication(db, application) {
+  return {
+    ...application,
+    job: db.jobs.find((item) => item.id === application.jobId) || null,
+    resumeVersion: db.resumeVersions.find((item) => item.id === application.resumeVersionId) || null,
+    sessions: (application.sessionIds || [])
+      .map((id) => db.sessions.find((item) => item.id === id))
+      .filter(Boolean)
+  };
+}
+
+export async function createApplication(record = {}) {
+  const db = await readDb();
+  const now = new Date().toISOString();
+  const application = {
+    id: nowId('application'),
+    jobId: record.jobId,
+    resumeVersionId: record.resumeVersionId || null,
+    sessionIds: Array.isArray(record.sessionIds) ? [...new Set(record.sessionIds.filter(Boolean))] : [],
+    status: record.status || 'saved',
+    appliedAt: record.appliedAt || null,
+    interviewAt: record.interviewAt || null,
+    nextAction: record.nextAction || '',
+    result: record.result || '',
+    notes: record.notes || '',
+    createdAt: now,
+    updatedAt: now
+  };
+  db.applications.push(application);
+  await writeDb(db);
+  return enrichApplication(db, application);
+}
+
+export async function listApplications() {
+  const db = await readDb();
+  return db.applications.slice().reverse().map((item) => enrichApplication(db, item));
+}
+
+export async function getApplication(id) {
+  const db = await readDb();
+  const application = db.applications.find((item) => item.id === id);
+  return application ? enrichApplication(db, application) : null;
+}
+
+export async function updateApplication(id, patch = {}) {
+  const db = await readDb();
+  const application = db.applications.find((item) => item.id === id);
+  if (!application) return null;
+  for (const key of ['resumeVersionId', 'status', 'appliedAt', 'interviewAt', 'nextAction', 'result', 'notes']) {
+    if (patch[key] !== undefined) application[key] = patch[key];
+  }
+  if (Array.isArray(patch.sessionIds)) {
+    application.sessionIds = [...new Set(patch.sessionIds.filter(Boolean))];
+  }
+  application.updatedAt = new Date().toISOString();
+  await writeDb(db);
+  return enrichApplication(db, application);
+}
+
+export async function deleteApplication(id) {
+  const db = await readDb();
+  const before = db.applications.length;
+  db.applications = db.applications.filter((item) => item.id !== id);
+  if (before === db.applications.length) return false;
+  await writeDb(db);
+  return true;
 }

@@ -9,6 +9,8 @@ import ResumeGenerationWorkspace from './features/resume-generation/ResumeGenera
 import JobMatchWorkspace from './features/job-match/JobMatchWorkspace';
 import { useJobMatch } from './features/job-match/useJobMatch';
 import { useResumeGeneration } from './features/resume-generation/useResumeGeneration';
+import ApplicationWorkspace from './features/applications/ApplicationWorkspace';
+import { useApplications } from './features/applications/useApplications';
 import { resumePilotApi } from './services/resumePilotApi';
 import type {
   Dashboard,
@@ -22,10 +24,11 @@ import type {
   Session
 } from './types/domain';
 
-type Tab = 'workspace' | 'resumes' | 'sessions' | 'dashboard';
+type Tab = 'workspace' | 'applications' | 'resumes' | 'sessions' | 'dashboard';
 type DisplayTab = 'overview' | 'resume' | 'generated' | 'jd';
 const MAIN_NAV_ITEMS: Array<{ key: string; label: string; target: Tab; displayTab?: DisplayTab }> = [
   { key: 'workbench', label: '工作台', target: 'workspace', displayTab: 'overview' },
+  { key: 'applications', label: '求职进度', target: 'applications' },
   { key: 'resumes', label: '简历库', target: 'resumes' },
   { key: 'sessions', label: '面试记录', target: 'sessions' },
   { key: 'diagnostics', label: '管理与诊断', target: 'dashboard' }
@@ -40,7 +43,7 @@ const WORKBENCH_TABS: Array<[DisplayTab, string]> = [
 
 const WORKSPACE_STATE_KEY = 'resumepilot.workspaceState';
 const DEFAULT_GOAL = '请围绕项目经历生成可深挖的面试问题';
-const TAB_VALUES: Tab[] = ['workspace', 'resumes', 'sessions', 'dashboard'];
+const TAB_VALUES: Tab[] = ['workspace', 'applications', 'resumes', 'sessions', 'dashboard'];
 const DISPLAY_TAB_VALUES: DisplayTab[] = ['overview', 'resume', 'generated', 'jd'];
 
 interface PersistedWorkspaceState {
@@ -125,6 +128,7 @@ export default function App() {
     setLoading,
     showGenerated: () => setDisplayTab('generated')
   });
+  const applications = useApplications(setLoading);
   const {
     jdText,
     jdUrl,
@@ -353,7 +357,8 @@ export default function App() {
         loadLlmReadiness(),
         loadLlmMetrics(),
         jobMatch.loadHistory(),
-        jobMatch.loadJobs()
+        jobMatch.loadJobs(),
+        applications.load()
       ]);
 
       if (cancelled) return;
@@ -556,6 +561,18 @@ export default function App() {
             </div>
           </section>
         </main>
+      )}
+
+      {tab === 'applications' && (
+        <ApplicationWorkspace
+          applications={applications.applications}
+          jobs={jobs}
+          versions={resumeVersions}
+          sessions={sessions}
+          onCreate={applications.create}
+          onUpdate={applications.update}
+          onDelete={applications.remove}
+        />
       )}
 
       {tab === 'resumes' && (

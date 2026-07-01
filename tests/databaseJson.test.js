@@ -98,3 +98,27 @@ test('json job descriptions upsert by dedupeKey and store matches', async () => 
   assert.equal(matches.length, 1);
   assert.equal(matches[0].job.id, second.id, 'match joins its job description');
 });
+
+test('json application links job, resume version, and interview session', async () => {
+  const resume = await db.saveResumeRecord({ text: 'Application resume', sections: [], risks: [], kbSize: 0 });
+  const version = await db.saveResumeVersion({ resumeId: resume.id, label: 'Backend 定向版', content: { basics: {} } });
+  const job = await db.saveJobDescription({ title: 'Backend Engineer', company: 'Acme', text: 'Node.js', dedupeKey: 'application-job' });
+  const session = await db.createSession({ title: 'Backend mock', goal: 'Backend', resumeId: resume.id });
+  const application = await db.createApplication({
+    jobId: job.id,
+    resumeVersionId: version.id,
+    sessionIds: [session.id],
+    status: 'preparing',
+    nextAction: '完善项目证据'
+  });
+
+  assert.equal(application.job.id, job.id);
+  assert.equal(application.resumeVersion.id, version.id);
+  assert.equal(application.sessions[0].id, session.id);
+
+  const updated = await db.updateApplication(application.id, { status: 'applied', appliedAt: '2026-07-01T00:00:00.000Z' });
+  assert.equal(updated.status, 'applied');
+  assert.equal((await db.listApplications())[0].nextAction, '完善项目证据');
+  assert.equal(await db.deleteApplication(application.id), true);
+  assert.equal(await db.getApplication(application.id), null);
+});

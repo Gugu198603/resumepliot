@@ -3,6 +3,7 @@ import { pathToFileURL } from 'url';
 import cors from 'cors';
 import express from 'express';
 import { agentRouter } from './routes/agentRoutes.js';
+import { applicationRouter } from './routes/applicationRoutes.js';
 import { jobMatchRouter } from './routes/jobMatchRoutes.js';
 import { jobRouter } from './routes/jobRoutes.js';
 import { productRouter } from './routes/productRoutes.js';
@@ -37,6 +38,7 @@ app.use(express.json({ limit: '10mb' }));
 
 app.use('/api', createSystemRouter({ vectorProvider, computeDashboard, getQdrantReadiness }));
 app.use('/api', productRouter);
+app.use('/api', applicationRouter);
 app.use('/api', jobRouter);
 app.use('/api', jobMatchRouter);
 app.use('/api', sessionRouter);

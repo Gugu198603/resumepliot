@@ -322,6 +322,33 @@ export interface JobMatch {
   createdAt: string;
 }
 
+export type ApplicationStatus =
+  | 'saved'
+  | 'preparing'
+  | 'applied'
+  | 'interviewing'
+  | 'offer'
+  | 'rejected'
+  | 'withdrawn';
+
+export interface Application {
+  id: string;
+  jobId: string;
+  resumeVersionId?: string | null;
+  sessionIds: string[];
+  status: ApplicationStatus;
+  appliedAt?: string | null;
+  interviewAt?: string | null;
+  nextAction?: string;
+  result?: string;
+  notes?: string;
+  job?: JobDescription | null;
+  resumeVersion?: ResumeVersion | null;
+  sessions?: Session[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface LlmReadiness {
   mode: LlmMode;
   configured: boolean;

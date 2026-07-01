@@ -1,0 +1,97 @@
+.application-page {
+  display: grid;
+  gap: 18px;
+  min-height: 0;
+  overflow: auto;
+  padding-bottom: 12px;
+}
+
+.application-create {
+  display: grid;
+  grid-template-columns: minmax(220px, .7fr) minmax(560px, 1.5fr);
+  gap: 24px;
+  align-items: end;
+}
+
+.application-create h2 {
+  margin: 4px 0 8px;
+}
+
+.application-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.application-form button {
+  min-height: 44px;
+}
+
+.application-board {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(220px, 1fr));
+  gap: 12px;
+  overflow-x: auto;
+  align-items: start;
+}
+
+.application-column {
+  min-width: 220px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+}
+
+.application-column > header {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 4px 12px;
+}
+
+.application-column > header span {
+  color: var(--muted);
+}
+
+.application-list {
+  display: grid;
+  gap: 10px;
+}
+
+.application-card {
+  display: grid;
+  gap: 11px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.application-card h3,
+.application-card p {
+  margin: 0;
+}
+
+.application-card label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.application-links {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+@media (max-width: 900px) {
+  .application-create {
+    grid-template-columns: 1fr;
+  }
+
+  .application-form {
+    grid-template-columns: 1fr;
+  }
+}

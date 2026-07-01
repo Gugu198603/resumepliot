@@ -567,6 +567,89 @@ export async function getResumeVersion(id) {
   return mapResumeVersion(await client.resumeVersion.findUnique({ where: { id } }));
 }
 
+async function enrichApplication(client, record) {
+  if (!record) return null;
+  const [job, resumeVersion, sessions] = await Promise.all([
+    client.jobDescription.findUnique({ where: { id: record.jobId } }),
+    record.resumeVersionId
+      ? client.resumeVersion.findUnique({ where: { id: record.resumeVersionId } })
+      : null,
+    client.session.findMany({ where: { id: { in: fromJsonString(record.sessionIdsJson, []) || [] } } })
+  ]);
+  return {
+    id: record.id,
+    jobId: record.jobId,
+    resumeVersionId: record.resumeVersionId,
+    sessionIds: fromJsonString(record.sessionIdsJson, []) || [],
+    status: record.status,
+    appliedAt: record.appliedAt,
+    interviewAt: record.interviewAt,
+    nextAction: record.nextAction || '',
+    result: record.result || '',
+    notes: record.notes || '',
+    job: mapJob(job),
+    resumeVersion: mapResumeVersion(resumeVersion),
+    sessions: sessions.map(mapSession),
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt
+  };
+}
+
+export async function createApplication(record = {}) {
+  const client = await getPrisma();
+  const row = await client.application.create({
+    data: {
+      jobId: record.jobId,
+      resumeVersionId: record.resumeVersionId || null,
+      sessionIdsJson: toJsonString(record.sessionIds || []),
+      status: record.status || 'saved',
+      appliedAt: record.appliedAt ? new Date(record.appliedAt) : null,
+      interviewAt: record.interviewAt ? new Date(record.interviewAt) : null,
+      nextAction: record.nextAction || null,
+      result: record.result || null,
+      notes: record.notes || null
+    }
+  });
+  return enrichApplication(client, row);
+}
+
+export async function listApplications() {
+  const client = await getPrisma();
+  const rows = await client.application.findMany({ orderBy: { updatedAt: 'desc' } });
+  return Promise.all(rows.map((row) => enrichApplication(client, row)));
+}
+
+export async function getApplication(id) {
+  const client = await getPrisma();
+  return enrichApplication(client, await client.application.findUnique({ where: { id } }));
+}
+
+export async function updateApplication(id, patch = {}) {
+  const client = await getPrisma();
+  const data = {};
+  for (const key of ['resumeVersionId', 'status', 'nextAction', 'result', 'notes']) {
+    if (patch[key] !== undefined) data[key] = patch[key] || null;
+  }
+  if (patch.sessionIds !== undefined) data.sessionIdsJson = toJsonString(patch.sessionIds || []);
+  if (patch.appliedAt !== undefined) data.appliedAt = patch.appliedAt ? new Date(patch.appliedAt) : null;
+  if (patch.interviewAt !== undefined) data.interviewAt = patch.interviewAt ? new Date(patch.interviewAt) : null;
+  try {
+    return enrichApplication(client, await client.application.update({ where: { id }, data }));
+  } catch {
+    return null;
+  }
+}
+
+export async function deleteApplication(id) {
+  const client = await getPrisma();
+  try {
+    await client.application.delete({ where: { id } });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function isPrismaAvailable() {
   return providerAvailable;
 }

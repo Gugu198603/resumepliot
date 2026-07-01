@@ -173,3 +173,23 @@ export async function getResumeVersion(id) {
   const provider = await getProvider();
   return await provider.getResumeVersion(id);
 }
+
+export async function createApplication(record) {
+  return await (await getProvider()).createApplication(record);
+}
+
+export async function listApplications() {
+  return await (await getProvider()).listApplications();
+}
+
+export async function getApplication(id) {
+  return await (await getProvider()).getApplication(id);
+}
+
+export async function updateApplication(id, patch) {
+  return await (await getProvider()).updateApplication(id, patch);
+}
+
+export async function deleteApplication(id) {
+  return await (await getProvider()).deleteApplication(id);
+}
