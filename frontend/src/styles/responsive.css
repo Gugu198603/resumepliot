@@ -1,0 +1,235 @@
+@media (max-width: 1200px) {
+  .jd-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .jd-keyword-groups {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Resume management */
+.resumes-layout {
+  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+  align-items: stretch;
+}
+
+.resumes-layout > .card {
+  align-self: stretch;
+}
+
+.resume-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.resume-item-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.import-notice {
+  display: block;
+  margin-top: 8px;
+  color: var(--text-soft);
+  line-height: 1.5;
+}
+
+.duplicate-badge {
+  display: inline-flex;
+  width: fit-content;
+  margin: 4px 0;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(167, 176, 161, 0.18);
+  color: var(--title);
+  border: 1px solid rgba(167, 176, 161, 0.55);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.danger-button {
+  background: rgba(183, 143, 136, 0.16);
+  color: var(--accent-strong);
+  border: 1px solid var(--rose);
+}
+
+/* Interview progressive follow-up */
+.interview-progress {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0 4px;
+}
+
+.interview-stage {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 4px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  color: var(--text-soft);
+  font-size: 11px;
+}
+
+.interview-stage span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: rgba(145, 127, 116, 0.12);
+  font-weight: 700;
+}
+
+.interview-stage.active {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+.interview-stage.active span {
+  background: var(--accent);
+  color: #fffbf6;
+}
+
+.interview-stage.done {
+  color: var(--title);
+  border-color: var(--sage);
+}
+
+.interview-stage.done span {
+  background: var(--sage);
+  color: #fffbf6;
+}
+
+.timeline-stage {
+  display: inline-block;
+  margin-bottom: 8px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: rgba(167, 176, 161, 0.18);
+  color: var(--accent-strong);
+}
+
+.sessions-layout {
+  grid-template-columns: minmax(300px, 340px) minmax(0, 1fr);
+}
+
+.sessions-layout > .card {
+  min-height: 0;
+}
+
+.sessions-layout > .card.tall {
+  grid-row: auto;
+}
+
+.sessions-layout > .session-list-card,
+.sessions-layout > .session-detail-card {
+  align-self: stretch;
+  overflow: hidden;
+}
+
+.session-list-card .risk-list {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  padding-right: 4px;
+}
+
+.session-detail-card > .session-detail-stack {
+  flex: 1 1 auto;
+}
+
+.session-detail-stack {
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.session-detail-stack .detail-header {
+  min-height: 0;
+}
+
+.session-workbench {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.9fr) minmax(0, 1.4fr);
+  gap: 14px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.session-chat-panel {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 14px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.scroll-block {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  padding-right: 4px;
+}
+
+.followup-block {
+  min-width: 0;
+  max-height: 128px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  padding-right: 4px;
+}
+
+@media (max-width: 720px) {
+  .sessions-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .session-workbench {
+    grid-template-columns: 1fr;
+  }
+}
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 9px 14px;
+  border-radius: 8px;
+  background: var(--accent, #2563eb);
+  color: #fff;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.export-notice {
+  margin: 0;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: rgba(167, 176, 161, 0.16);
+  color: #5c6b54;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.export-notice.error {
+  background: rgba(183, 143, 136, 0.14);
+  color: #8b4f48;
+}

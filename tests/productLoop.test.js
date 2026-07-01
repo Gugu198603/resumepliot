@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { buildCandidateProfile } from '../server/services/candidateProfile.js';
 import { scoreInterviewAnswer, buildInterviewReport } from '../server/services/interviewReport.js';
 import { diffResumeVersions } from '../server/services/resumeDiff.js';
-import { createResumeDocx } from '../server/services/docxExport.js';
+import { createResumeDocx, normalizeResumeDocument } from '../server/services/docxExport.js';
+import { validateGeneratedResume } from '../server/services/resumeGeneration.js';
 
 test('candidate profile links claims and metrics to source evidence', () => {
   const profile = buildCandidateProfile({
@@ -56,8 +57,38 @@ test('resume version diff reports added, removed and changed fields', () => {
 });
 
 test('DOCX export creates an OOXML zip package', () => {
-  const buffer = createResumeDocx({ basics: { name: 'Alice', label: 'Engineer' }, skills: [{ name: '技术', keywords: ['Node.js'] }] });
+  const content = {
+    basics: { name: 'Alice', label: 'Engineer' },
+    skills: [{ name: '技术', keywords: ['Node.js'] }],
+    projects: [{ name: 'ResumePilot', highlights: ['实现简历导出'] }]
+  };
+  const document = normalizeResumeDocument(content);
+  assert.ok(document.blocks.some((block) => block.type === 'bullet'));
+  const buffer = createResumeDocx(content);
   assert.equal(buffer.subarray(0, 2).toString(), 'PK');
   assert.ok(buffer.includes(Buffer.from('word/document.xml')));
+  assert.ok(buffer.includes(Buffer.from('word/styles.xml')));
+  assert.ok(buffer.includes(Buffer.from('word/numbering.xml')));
   assert.ok(buffer.length > 500);
+});
+
+test('edited resume content is revalidated against original evidence before export', async () => {
+  const resume = {
+    text: 'Alice\n项目经历\n负责 ResumePilot，使用 Node.js 实现简历导出。',
+    sections: [
+      { title: '基本信息', content: ['Alice'] },
+      { title: '项目经历', content: ['负责 ResumePilot，使用 Node.js 实现简历导出。'] }
+    ]
+  };
+  const valid = await validateGeneratedResume({
+    resume,
+    content: { basics: { name: 'Alice' }, projects: [{ name: 'ResumePilot', highlights: ['使用 Node.js 实现简历导出'] }] }
+  });
+  const invalid = await validateGeneratedResume({
+    resume,
+    content: { basics: { name: 'Alice' }, projects: [{ name: 'ResumePilot', highlights: ['使用 Rust 将性能提升 80%'] }] }
+  });
+  assert.equal(valid.ok, true);
+  assert.equal(invalid.ok, false);
+  assert.ok(invalid.resume_validation.issues.length > 0);
 });

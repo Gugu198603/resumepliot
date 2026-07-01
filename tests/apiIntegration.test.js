@@ -65,4 +65,54 @@ test('agent SSE endpoint emits lifecycle events', { timeout: 30_000 }, async () 
   assert.match(body, /event: run_created/);
   assert.match(body, /event: run_complete/);
 });
+
+test('session JSON and SSE transports share the interview execution workflow', { timeout: 30_000 }, async () => {
+  const createResponse = await fetch(`${baseUrl}/api/sessions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: '模块化面试', goal: '深挖项目经历' })
+  });
+  assert.equal(createResponse.status, 201);
+  const { session } = await createResponse.json();
+  const continueResponse = await fetch(`${baseUrl}/api/sessions/${session.id}/continue/stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      text: '负责 ResumePilot 的 Node.js 服务开发，接口延迟降低 30%。',
+      answer: '我负责服务拆分和缓存优化，最终接口延迟降低 30%。'
+    })
+  });
+  assert.equal(continueResponse.status, 200);
+  const stream = await continueResponse.text();
+  assert.match(stream, /event: process_event/);
+  assert.match(stream, /event: run_complete/);
+  const sessionResponse = await fetch(`${baseUrl}/api/sessions/${session.id}`);
+  const updated = await sessionResponse.json();
+  assert.equal(updated.session.turns.length, 2);
+  assert.ok(updated.session.turns[0].assessment?.overall > 0);
+});
+
+test('DOCX export validates and snapshots the exact submitted content', { timeout: 30_000 }, async () => {
+  const form = new FormData();
+  form.append('text', 'Alice\n基本信息\nAlice\n项目经历\n负责 ResumePilot，使用 Node.js 实现简历导出。');
+  const parseResponse = await fetch(`${baseUrl}/api/parse`, { method: 'POST', body: form });
+  assert.equal(parseResponse.status, 200);
+  const parsed = await parseResponse.json();
+
+  const content = {
+    basics: { name: 'Alice' },
+    projects: [{ name: 'ResumePilot', highlights: ['使用 Node.js 实现简历导出'] }]
+  };
+  const exportResponse = await fetch(`${baseUrl}/api/resumes/${parsed.resumeId}/exports/docx`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content })
+  });
+  assert.equal(exportResponse.status, 200);
+  assert.match(exportResponse.headers.get('content-type') || '', /wordprocessingml/);
+  assert.ok(exportResponse.headers.get('x-resume-version-id'));
+  const bytes = Buffer.from(await exportResponse.arrayBuffer());
+  assert.equal(bytes.subarray(0, 2).toString(), 'PK');
+  assert.ok(bytes.includes(Buffer.from('word/styles.xml')));
+});
 });

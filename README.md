@@ -47,6 +47,7 @@
 - `server/`：Express API、多 agent、服务层
 - `prisma/`：Prisma schema 与 SQLite 数据库
 - `data/latest.json`：最近一次解析结果
+- [模块架构说明](docs/architecture.md)
 
 ## 启动方式
 

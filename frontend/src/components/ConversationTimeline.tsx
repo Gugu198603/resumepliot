@@ -5,28 +5,38 @@ export default function ConversationTimeline({ turns }: { turns: Turn[] }) {
   if (!answeredTurns.length) return <p className="empty">暂无已提交的对话轮次。</p>;
 
   return (
-    <div className="timeline">
+    <div className="conversation-stream">
       {answeredTurns.map((turn, idx) => (
-        <div key={idx} className="timeline-item">
-          <div className="timeline-node">{idx + 1}</div>
-          <div className="timeline-content">
-            {turn.stage ? <span className="timeline-stage">第 {(turn.depth ?? idx) + 1} 轮 · {turn.stage}</span> : null}
-            <div className="message interviewer"><strong>问题</strong><p>{turn.question || '-'}</p></div>
-            <div className="message user"><strong>回答</strong><p>{turn.answer || '-'}</p></div>
-            <div className="message critic"><strong>反馈</strong><p>{Array.isArray(turn.critique) ? turn.critique.join('；') : (turn.critique || '-')}</p></div>
-            <div className="message writer"><strong>改进回答</strong><p>{turn.improvedAnswer || '-'}</p></div>
-            {turn.retrieved?.length ? (
-              <div className="message retriever">
-                <strong>参考材料</strong>
-                <ul>
-                  {turn.retrieved.map((item: RetrievedChunk, i: number) => (
-                    <li key={i}>[{item.source || 'resume'}] score={item.score} {String(item.content || '').slice(0, 120)}...</li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
+        <article key={idx} className="conversation-turn">
+          <header>
+            <span>{idx + 1}</span>
+            <div>
+              <small>{turn.stage ? `第 ${(turn.depth ?? idx) + 1} 轮 · ${turn.stage}` : `第 ${idx + 1} 轮`}</small>
+              <strong>{turn.question || '-'}</strong>
+            </div>
+          </header>
+          <div className="conversation-answer">
+            <span>你</span>
+            <p>{turn.answer || '-'}</p>
           </div>
-        </div>
+          {(turn.critique || turn.improvedAnswer || turn.retrieved?.length) ? (
+            <details className="conversation-review">
+              <summary>查看本轮反馈</summary>
+              {turn.critique ? <div><strong>反馈</strong><p>{Array.isArray(turn.critique) ? turn.critique.join('；') : turn.critique}</p></div> : null}
+              {turn.improvedAnswer ? <div><strong>参考表达</strong><p>{turn.improvedAnswer}</p></div> : null}
+              {turn.retrieved?.length ? (
+                <div>
+                  <strong>参考依据</strong>
+                  <ul>
+                    {turn.retrieved.map((item: RetrievedChunk, i: number) => (
+                      <li key={i}>[{item.source || 'resume'}] {String(item.content || '').slice(0, 120)}...</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </details>
+          ) : null}
+        </article>
       ))}
     </div>
   );

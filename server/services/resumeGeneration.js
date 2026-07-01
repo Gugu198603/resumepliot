@@ -227,3 +227,29 @@ export async function generateResumePreview({ resume, adjustment = '', jobDescri
     child.stdin.end(payload);
   });
 }
+
+export async function validateGeneratedResume({ resume, content, adjustment = '' }) {
+  const careerProfile = buildCareerProfileFromResume({ resume, adjustment });
+  const payload = JSON.stringify({ action: 'validate', careerProfile, resume: content });
+
+  return await new Promise((resolve, reject) => {
+    const child = spawn('python3', ['-m', 'resume_generation_skill.cli'], {
+      cwd: rootDir,
+      env: { ...process.env, PYTHONPATH: skillSrcDir },
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
+    child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+    child.on('error', reject);
+    child.on('close', () => {
+      try {
+        resolve({ ...JSON.parse(stdout || stderr || '{}'), careerProfile });
+      } catch (error) {
+        reject(new Error(`Failed to parse resume validation output: ${error.message}; stderr=${stderr}`));
+      }
+    });
+    child.stdin.end(payload);
+  });
+}

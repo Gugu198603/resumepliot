@@ -1,0 +1,494 @@
+.agent-stack {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  min-height: 0;
+}
+
+.generation-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.generation-control,
+.generation-status-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.generation-control h4 {
+  margin: 0 0 6px;
+  color: var(--title);
+}
+
+.generation-control p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.generation-adjustment {
+  min-height: 92px;
+}
+
+.generation-result {
+  display: grid;
+  gap: 12px;
+}
+
+.pdf-preview-shell {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 18px;
+  background: rgba(237, 228, 218, 0.52);
+  border: 1px solid rgba(145, 127, 116, 0.12);
+  overflow: hidden;
+}
+
+.pdf-preview-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  color: var(--title);
+}
+
+.pdf-preview-head span {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-soft);
+  font-size: 12px;
+}
+
+.pdf-preview-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.pdf-preview-actions select {
+  width: auto;
+  min-width: 92px;
+  border: 1px solid rgba(145, 127, 116, 0.2);
+  border-radius: 12px;
+  padding: 9px 10px;
+  background: rgba(255, 251, 246, 0.88);
+  color: var(--title);
+}
+
+.pdf-preview-actions button {
+  margin-top: 0;
+}
+
+.generated-workspace {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  gap: 14px;
+  min-height: 0;
+}
+
+.generated-edit-pane,
+.generated-preview-pane {
+  min-width: 0;
+  border-radius: 18px;
+  border: 1px solid rgba(145, 127, 116, 0.12);
+  background: rgba(255, 251, 246, 0.62);
+}
+
+.generated-edit-pane {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  max-height: calc(100vh - 260px);
+  overflow: hidden;
+}
+
+.generated-preview-pane {
+  padding: 14px;
+  overflow-x: auto;
+}
+
+.pane-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(145, 127, 116, 0.12);
+}
+
+.pane-title strong {
+  color: var(--title);
+}
+
+.pane-title span {
+  color: var(--text-soft);
+  font-size: 12px;
+}
+
+.generated-editor {
+  display: grid;
+  gap: 12px;
+  overflow: auto;
+  padding: 14px;
+  overscroll-behavior: contain;
+}
+
+.generated-editor-section,
+.generated-editor-item {
+  display: grid;
+  gap: 8px;
+}
+
+.generated-editor-section {
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(145, 127, 116, 0.12);
+  background: rgba(255, 251, 246, 0.78);
+}
+
+.generated-editor-section h5 {
+  margin: 0 0 2px;
+  color: var(--title);
+}
+
+.generated-editor label {
+  color: var(--text-soft);
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.generated-editor textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.generated-resume-pages {
+  display: grid;
+  gap: 18px;
+}
+
+.generated-resume-card {
+  width: min(794px, 100%);
+  min-height: 1123px;
+  position: relative;
+  overflow: visible;
+  margin: 0 auto;
+  background: #fffdf9;
+  border: 1px solid rgba(145, 127, 116, 0.18);
+  border-radius: 4px;
+  padding: 30px 38px;
+  box-shadow: 0 18px 44px rgba(89, 73, 62, 0.14);
+  color: #37312e;
+  font-size: 12px;
+}
+
+.density-compact .generated-resume-card {
+  padding: 26px 34px;
+}
+
+.density-dense .generated-resume-card {
+  padding: 22px 30px;
+}
+
+.validation-item {
+  background: rgba(255, 251, 246, 0.72);
+  border: 1px solid rgba(145, 127, 116, 0.12);
+  border-radius: 16px;
+  padding: 14px;
+}
+
+.generated-resume-card h5 {
+  margin: 0 0 6px;
+  color: var(--title);
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.density-compact .generated-resume-card h5 { font-size: 17px; }
+.density-dense .generated-resume-card h5 { font-size: 16px; }
+
+.generated-resume-card p {
+  margin: 0;
+  color: #4f4844;
+  line-height: 1.45;
+}
+
+.density-compact .generated-resume-card p,
+.density-compact .generated-item ul {
+  line-height: 1.38;
+}
+
+.density-dense .generated-resume-card p,
+.density-dense .generated-item ul {
+  line-height: 1.28;
+  font-size: 11px;
+}
+
+.generated-resume-head,
+.generated-item-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.generated-contact {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  color: var(--text-soft);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.generated-section {
+  margin-top: 11px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(95, 89, 85, 0.22);
+}
+
+.density-compact .generated-section {
+  margin-top: 9px;
+  padding-top: 7px;
+}
+
+.density-dense .generated-section {
+  margin-top: 7px;
+  padding-top: 6px;
+}
+
+.generated-section h6 {
+  margin: 0 0 7px;
+  color: var(--title);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+
+.density-dense .generated-section h6 {
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.generated-item {
+  display: grid;
+  gap: 5px;
+  padding: 6px 0;
+}
+
+.density-compact .generated-item {
+  gap: 4px;
+  padding: 5px 0;
+}
+
+.density-dense .generated-item {
+  gap: 3px;
+  padding: 4px 0;
+}
+
+.generated-item + .generated-item {
+  margin-top: 4px;
+  border-top: 1px dashed rgba(145, 127, 116, 0.24);
+}
+
+.generated-item-title strong {
+  color: var(--title);
+}
+
+.generated-item-title span {
+  color: var(--text-soft);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.generated-summary {
+  padding-left: 10px;
+  border-left: 3px solid rgba(167, 176, 161, 0.55);
+}
+
+.generated-item ul {
+  margin: 0;
+  padding-left: 16px;
+  color: #4f4844;
+  line-height: 1.45;
+}
+
+.generated-item li + li {
+  margin-top: 2px;
+}
+
+.generated-skill-list {
+  display: grid;
+  gap: 10px;
+}
+
+.generated-skill {
+  display: grid;
+  gap: 8px;
+}
+
+.generated-skill strong {
+  color: var(--title);
+}
+
+.validation-list {
+  display: grid;
+  gap: 10px;
+}
+
+.validation-list h5,
+.validation-item p {
+  margin: 0;
+}
+
+.validation-item {
+  display: grid;
+  gap: 6px;
+  border-left: 4px solid rgba(183, 143, 136, 0.65);
+}
+
+.validation-item strong {
+  color: var(--title);
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 10mm;
+  }
+
+  html,
+  body {
+    width: auto;
+    margin: 0;
+    background: #fff !important;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  .generated-preview-pane,
+  .generated-preview-pane * {
+    visibility: visible;
+  }
+
+  .generated-preview-pane {
+    position: fixed;
+    inset: 0;
+    display: block !important;
+    width: auto !important;
+    max-width: none !important;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: #fff;
+    overflow: visible;
+  }
+
+  .generated-preview-pane .pane-title {
+    display: none;
+  }
+
+  .generated-resume-pages {
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+  }
+
+  .generated-resume-card {
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    min-height: 0;
+    margin: 0 !important;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    background: #fff;
+    color: #111;
+    font-size: 9pt;
+    line-height: 1.28;
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+
+  .generated-resume-card h5 {
+    margin: 0 0 4pt;
+    font-size: 15pt !important;
+    line-height: 1.15;
+    color: #111;
+  }
+
+  .generated-resume-card p,
+  .generated-item ul {
+    font-size: 9pt !important;
+    line-height: 1.32 !important;
+    color: #222;
+  }
+
+  .generated-contact,
+  .generated-item-title span {
+    font-size: 8pt !important;
+    color: #555;
+  }
+
+  .generated-section {
+    margin-top: 7pt !important;
+    padding-top: 5pt !important;
+    border-top: 0.5pt solid #bbb;
+  }
+
+  .generated-section h6 {
+    margin: 0 0 4pt !important;
+    font-size: 9.5pt !important;
+    color: #111;
+  }
+
+  .generated-item {
+    gap: 3pt !important;
+    padding: 3pt 0 !important;
+  }
+
+  .generated-item-title {
+    gap: 8pt;
+  }
+
+  .generated-item-title strong {
+    font-size: 9.2pt;
+    color: #111;
+  }
+
+  .generated-summary {
+    padding-left: 6pt;
+    border-left: 1.5pt solid #aaa;
+  }
+
+  .generated-item ul {
+    margin: 0;
+    padding-left: 13pt;
+  }
+
+  .generated-item li + li {
+    margin-top: 1.5pt;
+  }
+
+  .chip {
+    padding: 0;
+    border-radius: 0;
+    background: transparent !important;
+    color: #222;
+  }
+
+  .generated-section,
+  .generated-item {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}
+
