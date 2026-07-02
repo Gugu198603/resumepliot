@@ -6,6 +6,8 @@ build/
 .env.*
 !.env.example
 .hf-cache/
+.model-artifacts/
+training/.venv/
 .vscode/
 data/app-db.json
 data/latest.json

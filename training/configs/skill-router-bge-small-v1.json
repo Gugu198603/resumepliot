@@ -1,0 +1,19 @@
+{
+  "experimentId": "skill-router-bge-small-encoder-finetune",
+  "version": "1.0.0",
+  "baseModel": "BAAI/bge-small-zh-v1.5",
+  "seed": 42,
+  "maxLength": 128,
+  "batchSize": 8,
+  "encodeBatchSize": 16,
+  "epochs": 3,
+  "learningRate": 0.000005,
+  "weightDecay": 0.01,
+  "margin": 0.1,
+  "trainableLastLayers": 1,
+  "prototypeTemperature": 0.08,
+  "qualityGate": {
+    "maxMacroF1Regression": 0.02,
+    "minUnknownRecall": 0.75
+  }
+}

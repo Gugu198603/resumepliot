@@ -222,6 +222,10 @@ export async function updateMemoryRecord(id, patch) {
   return await (await getProvider()).updateMemoryRecord(id, patch);
 }
 
+export async function deleteMemoryRecord(id) {
+  return await (await getProvider()).deleteMemoryRecord(id);
+}
+
 export async function listMemoryRecords(filters, limit) {
   return await (await getProvider()).listMemoryRecords(filters, limit);
 }

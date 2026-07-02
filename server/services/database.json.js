@@ -594,6 +594,15 @@ export async function updateMemoryRecord(id, patch = {}) {
   return row;
 }
 
+export async function deleteMemoryRecord(id) {
+  const db = await readDb();
+  const before = db.memories.length;
+  db.memories = db.memories.filter((item) => item.id !== id);
+  if (db.memories.length === before) return false;
+  await writeDb(db);
+  return true;
+}
+
 export async function listMemoryRecords(filters = {}, limit = 10) {
   const db = await readDb();
   return db.memories

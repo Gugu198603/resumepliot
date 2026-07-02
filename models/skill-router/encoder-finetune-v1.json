@@ -1,0 +1,45 @@
+{
+  "id": "resumepilot-skill-router-encoder-finetune",
+  "version": "1.0.0",
+  "createdAt": "2026-07-02T10:33:36.392863+00:00",
+  "dataset": {
+    "id": "resumepilot-skill-router",
+    "version": "1.0.0",
+    "sha256": "ce9b8c445d82003e7e8af3a291c9fecc3ba4b17787175095fcb2a8ff2a91172c",
+    "dataset": "resumepilot-skill-router",
+    "splits": {
+      "train": 64,
+      "validation": 15,
+      "test": 20
+    },
+    "triplets": 92,
+    "neighborSkillNegatives": 46,
+    "unknownNegatives": 46
+  },
+  "baseModel": "BAAI/bge-small-zh-v1.5",
+  "artifact": ".model-artifacts/skill-router-bge-small-v1",
+  "training": {
+    "objective": "cosine-triplet-margin",
+    "trainableLastLayers": 2,
+    "triplets": 92
+  },
+  "frozenTestMetrics": {
+    "accuracy": 0.95,
+    "macroF1": 0.949,
+    "unknownRecall": 1.0,
+    "coverage": 0.75
+  },
+  "fineTunedTestMetrics": {
+    "accuracy": 0.85,
+    "macroF1": 0.839,
+    "unknownRecall": 0.5,
+    "coverage": 0.9
+  },
+  "qualityGate": {
+    "maxMacroF1Regression": 0.02,
+    "minUnknownRecall": 0.75,
+    "eligibleForShadow": false,
+    "decision": "reject"
+  },
+  "report": "reports/skill-router-encoder-finetune.v1.json"
+}

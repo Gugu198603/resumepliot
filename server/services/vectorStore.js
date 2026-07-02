@@ -13,4 +13,5 @@ export const retrieveTopK = providerModule.retrieveTopK;
 export const upsertMemoryPoint = providerModule.upsertMemoryPoint;
 export const searchMemoryPoints = providerModule.searchMemoryPoints;
 export const deleteVectorNamespace = providerModule.deleteVectorNamespace;
+export const deleteVectorPoints = providerModule.deleteVectorPoints;
 export { embedBatch, embedOne, similarity, chunkText } from './vectorStore.shared.js';

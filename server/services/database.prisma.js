@@ -746,6 +746,15 @@ export async function updateMemoryRecord(id, patch = {}) {
   return await (await getPrisma()).memoryItem.update({ where: { id }, data: patch });
 }
 
+export async function deleteMemoryRecord(id) {
+  try {
+    await (await getPrisma()).memoryItem.delete({ where: { id } });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function listMemoryRecords(filters = {}, limit = 10) {
   return await (await getPrisma()).memoryItem.findMany({
     where: memoryWhere(filters),

@@ -199,6 +199,17 @@ export async function deleteVectorNamespace(namespace) {
   return { deleted: true, namespace };
 }
 
+export async function deleteVectorPoints(pointIds = []) {
+  const points = [...new Set(pointIds.filter(Boolean))];
+  if (!points.length) return { deleted: 0 };
+  await ensureCollection();
+  await qdrantFetch(`/collections/${QDRANT_COLLECTION}/points/delete?wait=true`, {
+    method: 'POST',
+    body: JSON.stringify({ points })
+  });
+  return { deleted: points.length };
+}
+
 export async function debugCollectionInfo() {
   return await qdrantFetch(`/collections/${QDRANT_COLLECTION}`);
 }

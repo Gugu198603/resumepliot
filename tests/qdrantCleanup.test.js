@@ -30,3 +30,29 @@ test('Qdrant namespace cleanup deletes points through an exact namespace filter'
     globalThis.fetch = originalFetch;
   }
 });
+
+test('Qdrant memory cleanup deletes exact point ids', async () => {
+  const calls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url: String(url), options });
+    return {
+      ok: true,
+      async json() {
+        return { result: {} };
+      },
+      async text() {
+        return '';
+      }
+    };
+  };
+  try {
+    const qdrant = await import(`../server/services/vectorStore.qdrant.js?points=${Date.now()}`);
+    const result = await qdrant.deleteVectorPoints(['point-a', 'point-b', 'point-a']);
+    assert.equal(result.deleted, 2);
+    const deletion = calls.find((item) => item.url.includes('/points/delete'));
+    assert.deepEqual(JSON.parse(deletion.options.body), { points: ['point-a', 'point-b'] });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

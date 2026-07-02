@@ -29,4 +29,8 @@ export async function deleteVectorNamespace(namespace) {
   return { deleted: true, namespace, noop: true };
 }
 
+export async function deleteVectorPoints(pointIds = []) {
+  return { deleted: pointIds.filter(Boolean).length, noop: true };
+}
+
 export const provider = 'memory';

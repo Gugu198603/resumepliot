@@ -18,6 +18,7 @@
 - Skill Router 分类数据集与可解释分类模型，支持 unknown 拒绝和规则/模型融合
 - 多 Agent 面试追问、回答评估、精简版 / 详细版简历改写
 - Agent 长期记忆：Run Summary 跨轮召回、按简历/会话/岗位隔离、去重、晋升与过期过滤
+- Memory 管理 API：检索、人工写入、归档/恢复、过期设置、手动晋升和向量同步删除
 - MCP Tool Gateway：Agent 工具白名单、参数校验、超时和 Run Event 审计
 - SQLite + Prisma 持久化，历史运行 / 会话可回看
 - 岗位 JD 对比并落库，匹配历史可回看
@@ -50,6 +51,9 @@
 - `GET|POST /api/applications`
 - `GET|PATCH|DELETE /api/applications/:id`
 - `GET /api/application-reminders?dueBefore=...`
+- `GET|POST /api/memories`
+- `GET|PATCH|DELETE /api/memories/:id`
+- `POST /api/memories/:id/promote`
 
 ## 目录结构
 

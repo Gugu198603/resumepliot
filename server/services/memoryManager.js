@@ -1,8 +1,14 @@
 import { createHash } from 'crypto';
 import { logger } from './logger.js';
-import { provider as vectorProvider, searchMemoryPoints, upsertMemoryPoint } from './vectorStore.js';
+import {
+  deleteVectorPoints,
+  provider as vectorProvider,
+  searchMemoryPoints,
+  upsertMemoryPoint
+} from './vectorStore.js';
 import {
   createMemoryRecord,
+  deleteMemoryRecord,
   findMemoryRecord,
   listMemoryRecords,
   touchMemoryRecords,
@@ -465,4 +471,86 @@ export async function retrieveMemory(options = {}) {
     });
     throw error;
   }
+}
+
+export async function getManagedMemory(id) {
+  return mapMemory(await findMemoryRecord({ ids: [id] }));
+}
+
+export async function listManagedMemories(options = {}) {
+  const limit = Math.max(1, Math.min(Number(options.limit) || 50, 200));
+  const rows = await listMemoryRecords({
+    query: options.query || '',
+    scopes: asArray(options.scopes),
+    types: asArray(options.types),
+    userId: options.userId,
+    resumeId: options.resumeId,
+    sessionId: options.sessionId,
+    jobId: options.jobId,
+    runId: options.runId,
+    sourceKind: options.sourceKind,
+    sourceId: options.sourceId,
+    ...(options.status ? { status: options.status } : {}),
+    includeExpired: options.includeExpired !== false
+  }, limit);
+  return rows.map(mapMemory);
+}
+
+export async function updateManagedMemory(id, patch = {}) {
+  const existing = await getManagedMemory(id);
+  if (!existing) return null;
+  const update = {};
+  if (patch.status !== undefined) {
+    if (!['active', 'archived'].includes(patch.status)) throw new Error('Memory status must be active or archived.');
+    update.status = patch.status;
+  }
+  if (patch.title !== undefined) update.title = String(patch.title || '').trim() || null;
+  for (const field of ['importance', 'confidence']) {
+    if (patch[field] === undefined) continue;
+    const value = Number(patch[field]);
+    if (!Number.isFinite(value) || value < 0 || value > 1) throw new Error(`${field} must be between 0 and 1.`);
+    update[field] = value;
+  }
+  if (patch.expiresAt !== undefined) {
+    if (patch.expiresAt === null || patch.expiresAt === '') {
+      update.expiresAt = null;
+    } else {
+      const value = new Date(patch.expiresAt);
+      if (Number.isNaN(value.getTime())) throw new Error('expiresAt must be a valid date or null.');
+      update.expiresAt = value;
+    }
+  }
+  if (patch.metadata !== undefined) update.metadataJson = toJsonString(patch.metadata);
+  if (!Object.keys(update).length) return existing;
+  return mapMemory(await updateMemoryRecord(id, update));
+}
+
+export async function deleteManagedMemory(id) {
+  const existing = await getManagedMemory(id);
+  if (!existing) return null;
+  const removed = await deleteMemoryRecord(id);
+  if (!removed) return null;
+  let vectorCleanup = { deleted: 0 };
+  if (existing.vectorPointId) {
+    try {
+      vectorCleanup = await deleteVectorPoints([existing.vectorPointId]);
+    } catch (error) {
+      vectorCleanup = { deleted: 0, error: error.message };
+      logger.info('memory.vector.delete_failed', {
+        id,
+        vectorPointId: existing.vectorPointId,
+        error: error.message
+      });
+    }
+  }
+  return { memory: existing, vectorCleanup };
+}
+
+export async function promoteManagedMemory(id) {
+  const existing = await findMemoryRecord({ ids: [id] });
+  if (!existing) return null;
+  return {
+    source: mapMemory(existing),
+    promoted: await promoteMemoryItem(existing)
+  };
 }

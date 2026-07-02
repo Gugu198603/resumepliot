@@ -17,6 +17,9 @@
     "train:skill-router:embeddings": "node scripts/train-embedding-skill-router.js",
     "test:skill-router:embeddings": "node scripts/evaluate-embedding-skill-router.js",
     "experiment:skill-router": "node scripts/compare-skill-router-models.js",
+    "setup:ml": "uv sync --project training",
+    "test:ml": "uv run --project training python -m unittest discover -s training/tests -p \"test_*.py\"",
+    "train:skill-router:encoder": "uv run --project training python training/train_embedding_router.py",
     "prisma:push": "prisma db push",
     "prisma:generate": "prisma generate",
     "db:migrate-json": "node --env-file=.env scripts/migrate-json-to-prisma.js"

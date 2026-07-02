@@ -9,7 +9,15 @@ process.env.APP_DB_PROVIDER = 'json';
 process.env.APP_DB_FILE = dbFile;
 process.env.MEMORY_PROMOTION_HIT_THRESHOLD = '3';
 
-const { retrieveMemory, writeMemory } = await import(`../server/services/memoryManager.js?test=${Date.now()}`);
+const {
+  deleteManagedMemory,
+  getManagedMemory,
+  listManagedMemories,
+  promoteManagedMemory,
+  retrieveMemory,
+  updateManagedMemory,
+  writeMemory
+} = await import(`../server/services/memoryManager.js?test=${Date.now()}`);
 
 test('memory write deduplicates the same scoped source', async () => {
   const input = {
@@ -76,4 +84,50 @@ test('expired memory is excluded unless explicitly requested', async () => {
   });
   assert.equal(active.length, 0);
   assert.equal(all.length, 1);
+});
+
+test('memory management supports listing, archiving, restoring, expiry and deletion', async () => {
+  const created = await writeMemory({
+    scope: 'resume',
+    type: 'fact',
+    resumeId: 'resume_admin',
+    sourceKind: 'test',
+    sourceId: 'admin',
+    content: '管理 API 测试记忆'
+  });
+  assert.equal((await getManagedMemory(created.id)).id, created.id);
+  assert.equal((await listManagedMemories({ resumeId: 'resume_admin' })).length, 1);
+
+  const archived = await updateManagedMemory(created.id, {
+    status: 'archived',
+    importance: 0.8,
+    expiresAt: '2030-01-01T00:00:00.000Z',
+    metadata: { reviewed: true }
+  });
+  assert.equal(archived.status, 'archived');
+  assert.equal(archived.importance, 0.8);
+  assert.deepEqual(archived.metadata, { reviewed: true });
+  assert.equal((await retrieveMemory({ resumeId: 'resume_admin', touch: false })).length, 0);
+
+  const restored = await updateManagedMemory(created.id, { status: 'active', expiresAt: null });
+  assert.equal(restored.status, 'active');
+  assert.equal(restored.expiresAt, null);
+  const deleted = await deleteManagedMemory(created.id);
+  assert.equal(deleted.memory.id, created.id);
+  assert.equal(await getManagedMemory(created.id), null);
+});
+
+test('memory management can manually promote an active run summary', async () => {
+  const source = await writeMemory({
+    scope: 'run',
+    type: 'summary',
+    resumeId: 'resume_manual_promote',
+    sessionId: 'session_manual_promote',
+    sourceKind: 'test',
+    sourceId: 'runtime_manual_promote',
+    content: '候选人完成了缓存一致性方案说明。'
+  });
+  const result = await promoteManagedMemory(source.id);
+  assert.equal(result.promoted.some((item) => item.scope === 'resume'), true);
+  assert.equal(result.promoted.some((item) => item.scope === 'session'), true);
 });

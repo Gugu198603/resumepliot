@@ -153,6 +153,9 @@ ResumePilot 是一个 AI 求职助手原型，核心目标是把“上传简历 
 - `POST /api/resumes/:id/corrections`：提交人工纠偏。
 - `POST /api/resumes/:id/generation-preview`：生成简历预览。
 - `POST /api/agent-run`：执行完整 Agent workflow。
+- `GET|POST /api/memories`：筛选或人工写入长期记忆。
+- `PATCH|DELETE /api/memories/:id`：归档、恢复、过期或删除记忆。
+- `POST /api/memories/:id/promote`：把 Run Summary 手动晋升到可绑定的长期作用域。
 - `POST /api/sessions/:id/continue`：在会话中继续追问/评估。
 - `GET /api/runs`、`GET /api/runs/:id`：运行记录。
 - `POST /api/jd-match`：简历与 JD 匹配。

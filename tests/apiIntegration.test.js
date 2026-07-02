@@ -100,6 +100,49 @@ test('Skill Router classifies paraphrases and rejects out-of-domain requests', a
   assert.equal(unknown.classifier.label, 'unknown');
 });
 
+test('Memory management API supports lifecycle and manual promotion', async () => {
+  const createResponse = await fetch(`${baseUrl}/api/memories`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      scope: 'run',
+      type: 'summary',
+      resumeId: 'resume_memory_api',
+      sessionId: 'session_memory_api',
+      sourceId: 'manual_memory_api',
+      content: '负责订单服务缓存一致性优化。'
+    })
+  });
+  assert.equal(createResponse.status, 201);
+  const created = (await createResponse.json()).memory;
+
+  const listResponse = await fetch(`${baseUrl}/api/memories?scope=run&includeExpired=true`);
+  assert.equal(listResponse.status, 200);
+  assert.equal((await listResponse.json()).memories.some((item) => item.id === created.id), true);
+
+  const archiveResponse = await fetch(`${baseUrl}/api/memories/${created.id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'archived', importance: 0.9 })
+  });
+  assert.equal(archiveResponse.status, 200);
+  assert.equal((await archiveResponse.json()).memory.status, 'archived');
+
+  await fetch(`${baseUrl}/api/memories/${created.id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'active' })
+  });
+  const promoteResponse = await fetch(`${baseUrl}/api/memories/${created.id}/promote`, { method: 'POST' });
+  assert.equal(promoteResponse.status, 200);
+  assert.ok((await promoteResponse.json()).promoted.length >= 2);
+
+  const deleteResponse = await fetch(`${baseUrl}/api/memories/${created.id}`, { method: 'DELETE' });
+  assert.equal(deleteResponse.status, 200);
+  assert.equal((await deleteResponse.json()).ok, true);
+  assert.equal((await fetch(`${baseUrl}/api/memories/${created.id}`)).status, 404);
+});
+
 test('agent SSE endpoint emits lifecycle events', { timeout: 30_000 }, async () => {
   const response = await fetch(`${baseUrl}/api/agent-run/stream`, {
     method: 'POST',

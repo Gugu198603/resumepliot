@@ -25,6 +25,7 @@ server/
 ├── routes/
 │   ├── systemRoutes.js             # Health, diagnostics, runs, MCP and RAG eval
 │   ├── applicationRoutes.js        # Job application lifecycle and linked artifacts
+│   ├── memoryRoutes.js             # Memory inspection, lifecycle and promotion management
 │   ├── resumeRoutes.js             # Resume CRUD
 │   ├── resumeAnalysisRoutes.js     # Parse, correction, comparison and generation
 │   ├── sessionRoutes.js            # Session CRUD
@@ -63,6 +64,12 @@ Agent memory follows the same database provider boundary as resumes and sessions
 before its first agent run, so the run record and summary memory share the same session identity.
 Subsequent runs retrieve prior run summaries by resume, session, or job; repeated retrieval can promote
 run summaries into longer-lived resume/session/user memory.
+
+Memory administration is exposed separately from runtime retrieval. Operators can list all statuses,
+write scoped records, archive/restore them, set or clear expiration, trigger promotion and delete a
+record. Deletion removes the database row first and then deletes the exact Qdrant point; a failed
+vector cleanup is reported without resurrecting the deleted memory, and orphan vector hits are ignored
+because retrieval always resolves candidates through the database status filter.
 
 Parser, retriever, critic and writer actions cross `Tool Gateway` and invoke MCP tools instead of
 calling their domain functions directly. The gateway enforces an agent-specific allowlist, timeout
