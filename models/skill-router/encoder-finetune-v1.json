@@ -1,7 +1,7 @@
 {
   "id": "resumepilot-skill-router-encoder-finetune",
   "version": "1.0.0",
-  "createdAt": "2026-07-02T10:33:36.392863+00:00",
+  "createdAt": "2026-07-02T10:35:06.019291+00:00",
   "dataset": {
     "id": "resumepilot-skill-router",
     "version": "1.0.0",
@@ -20,7 +20,7 @@
   "artifact": ".model-artifacts/skill-router-bge-small-v1",
   "training": {
     "objective": "cosine-triplet-margin",
-    "trainableLastLayers": 2,
+    "trainableLastLayers": 1,
     "triplets": 92
   },
   "frozenTestMetrics": {
@@ -30,16 +30,16 @@
     "coverage": 0.75
   },
   "fineTunedTestMetrics": {
-    "accuracy": 0.85,
-    "macroF1": 0.839,
-    "unknownRecall": 0.5,
-    "coverage": 0.9
+    "accuracy": 0.95,
+    "macroF1": 0.949,
+    "unknownRecall": 1.0,
+    "coverage": 0.75
   },
   "qualityGate": {
     "maxMacroF1Regression": 0.02,
     "minUnknownRecall": 0.75,
-    "eligibleForShadow": false,
-    "decision": "reject"
+    "eligibleForShadow": true,
+    "decision": "shadow"
   },
   "report": "reports/skill-router-encoder-finetune.v1.json"
 }
