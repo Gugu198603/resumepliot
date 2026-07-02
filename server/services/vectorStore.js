@@ -12,4 +12,5 @@ export const buildKnowledgeBase = providerModule.buildKnowledgeBase;
 export const retrieveTopK = providerModule.retrieveTopK;
 export const upsertMemoryPoint = providerModule.upsertMemoryPoint;
 export const searchMemoryPoints = providerModule.searchMemoryPoints;
+export const deleteVectorNamespace = providerModule.deleteVectorNamespace;
 export { embedBatch, embedOne, similarity, chunkText } from './vectorStore.shared.js';

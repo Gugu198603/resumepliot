@@ -339,6 +339,8 @@ export interface Application {
   status: ApplicationStatus;
   appliedAt?: string | null;
   interviewAt?: string | null;
+  reminderAt?: string | null;
+  reminderDone?: boolean;
   nextAction?: string;
   result?: string;
   notes?: string;

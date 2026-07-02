@@ -19,11 +19,12 @@ export const evaluateAnswerTool = {
           },
           required: ['content']
         }
-      }
+      },
+      memoryContext: { type: 'object', description: 'Optional retrieved long-term memory context.' }
     },
     required: ['question', 'answer']
   },
-  async handler({ question, answer, retrieved = [] }) {
-    return await critiqueAnswer({ question, answer, retrieved });
+  async handler({ question, answer, retrieved = [], memoryContext = null }) {
+    return await critiqueAnswer({ question, answer, retrieved, memoryContext });
   }
 };

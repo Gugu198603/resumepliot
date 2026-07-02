@@ -12,11 +12,12 @@ export const rewriteResumeTool = {
         type: 'array',
         items: { type: 'string' },
         description: 'Optional critique feedback.'
-      }
+      },
+      memoryContext: { type: 'object', description: 'Optional retrieved long-term memory context.' }
     },
     required: ['text']
   },
-  async handler({ text, answer = '', feedback = [] }) {
-    return await rewriteArtifacts({ text, answer, feedback });
+  async handler({ text, answer = '', feedback = [], memoryContext = null }) {
+    return await rewriteArtifacts({ text, answer, feedback, memoryContext });
   }
 };

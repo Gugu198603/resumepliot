@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { resumePilotApi } from '../../services/resumePilotApi';
 import type { JdMatchResult, JobDescription, ResumeGenerationPreview, ResumeVersion } from '../../types/domain';
 import type { PreviewDensity } from './GeneratedResume';
 import { openResumePrintWindow, printResumeElement } from './printResume';
@@ -36,6 +37,20 @@ export function useResumeGeneration({
     [preview?.resume]
   );
   const hasUnsavedChanges = Boolean(currentSnapshot && currentSnapshot !== savedSnapshot);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!resumeId) {
+      setVersions([]);
+      return;
+    }
+    resumePilotApi.listResumeVersions(resumeId).then((items) => {
+      if (!cancelled) setVersions(items);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [resumeId]);
 
   function exportPayload(label: string) {
     return {

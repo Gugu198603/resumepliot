@@ -6,6 +6,7 @@ import type {
   ResumeVersion,
   Session
 } from '../../types/domain';
+import ApplicationDetailPanel from './ApplicationDetailPanel';
 
 const STATUS_OPTIONS: Array<[ApplicationStatus, string]> = [
   ['saved', '收藏'],
@@ -36,6 +37,11 @@ interface ApplicationWorkspaceProps {
     resumeVersionId?: string | null;
     sessionIds?: string[];
     nextAction?: string;
+    interviewAt?: string | null;
+    reminderAt?: string | null;
+    reminderDone?: boolean;
+    result?: string;
+    notes?: string;
   }) => Promise<unknown>;
   onUpdate: (id: string, patch: {
     status?: ApplicationStatus;
@@ -59,6 +65,8 @@ export default function ApplicationWorkspace({
   const [versionId, setVersionId] = useState('');
   const [sessionId, setSessionId] = useState('');
   const [nextAction, setNextAction] = useState('');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selectedApplication = applications.find((application) => application.id === selectedId) || null;
 
   async function submit() {
     if (!jobId) return;
@@ -124,8 +132,8 @@ export default function ApplicationWorkspace({
                     <label>
                       下一步
                       <input
-                        value={application.nextAction || ''}
-                        onChange={(event) => onUpdate(application.id, { nextAction: event.target.value })}
+                        defaultValue={application.nextAction || ''}
+                        onBlur={(event) => onUpdate(application.id, { nextAction: event.target.value })}
                         placeholder="填写下一步行动"
                       />
                     </label>
@@ -133,6 +141,8 @@ export default function ApplicationWorkspace({
                       <span>{application.resumeVersion ? `简历：${application.resumeVersion.label}` : '未绑定简历版本'}</span>
                       <span>{application.sessions?.length || 0} 场面试练习</span>
                     </div>
+                    <ReminderBadge application={application} />
+                    <button className="secondary-button" onClick={() => setSelectedId(application.id)}>编辑详情</button>
                     <button className="danger-button" onClick={() => onDelete(application.id)}>删除</button>
                   </article>
                 ))}
@@ -142,6 +152,30 @@ export default function ApplicationWorkspace({
           );
         })}
       </section>
+      {selectedApplication ? (
+        <ApplicationDetailPanel
+          key={selectedApplication.id}
+          application={selectedApplication}
+          versions={versions}
+          sessions={sessions}
+          onClose={() => setSelectedId(null)}
+          onSave={(patch) => onUpdate(selectedApplication.id, patch)}
+        />
+      ) : null}
     </main>
   );
+}
+
+function ReminderBadge({ application }: { application: Application }) {
+  if (!application.reminderAt) return null;
+  if (application.reminderDone) return <span className="application-reminder done">提醒已完成</span>;
+  const reminder = new Date(application.reminderAt);
+  const delta = reminder.getTime() - Date.now();
+  const state = delta < 0 ? 'overdue' : delta <= 24 * 60 * 60 * 1000 ? 'soon' : 'scheduled';
+  const label = state === 'overdue'
+    ? `已逾期 · ${reminder.toLocaleString()}`
+    : state === 'soon'
+      ? `24 小时内 · ${reminder.toLocaleString()}`
+      : `提醒 · ${reminder.toLocaleString()}`;
+  return <span className={`application-reminder ${state}`}>{label}</span>;
 }

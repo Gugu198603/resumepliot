@@ -25,7 +25,9 @@ function normalizeDb(db = {}) {
     jobs: Array.isArray(db.jobs) ? db.jobs : [],
     jobMatches: Array.isArray(db.jobMatches) ? db.jobMatches : [],
     resumeVersions: Array.isArray(db.resumeVersions) ? db.resumeVersions : [],
-    applications: Array.isArray(db.applications) ? db.applications : []
+    applications: Array.isArray(db.applications) ? db.applications : [],
+    memories: Array.isArray(db.memories) ? db.memories : [],
+    knowledgeBaseVersions: Array.isArray(db.knowledgeBaseVersions) ? db.knowledgeBaseVersions : []
   };
 }
 
@@ -97,6 +99,8 @@ export async function updateResume(id, patch = {}) {
   if (Number.isFinite(patch.kbSize)) resume.kbSize = patch.kbSize;
   if (Array.isArray(patch.chunks)) resume.chunks = patch.chunks;
   if (patch.vectorProvider !== undefined) resume.vectorProvider = patch.vectorProvider || null;
+  if (patch.knowledgeBaseVersionId !== undefined) resume.knowledgeBaseVersionId = patch.knowledgeBaseVersionId || null;
+  if (Number.isFinite(patch.knowledgeBaseVersion)) resume.knowledgeBaseVersion = patch.knowledgeBaseVersion;
   resume.updatedAt = new Date().toISOString();
   await writeDb(db);
   return resume;
@@ -132,9 +136,75 @@ export async function deleteResume(id) {
   db.resumes = db.resumes.filter((item) => item.id !== id);
   db.corrections = db.corrections.filter((item) => item.resumeId !== id);
   db.resumeVersions = db.resumeVersions.filter((item) => item.resumeId !== id);
+  db.knowledgeBaseVersions = db.knowledgeBaseVersions.filter((item) => item.resumeId !== id);
   const removed = db.resumes.length < before;
   if (removed) await writeDb(db);
   return removed;
+}
+
+export async function createKnowledgeBaseVersion(record = {}) {
+  const db = await readDb();
+  const duplicate = db.knowledgeBaseVersions.find((item) =>
+    item.namespace === record.namespace ||
+    (item.resumeId === record.resumeId && item.versionNumber === record.versionNumber)
+  );
+  if (duplicate) throw new Error(`Knowledge base version already exists: ${record.namespace}`);
+  const now = new Date().toISOString();
+  const version = {
+    id: record.id || nowId('kbv'),
+    resumeId: record.resumeId,
+    versionNumber: record.versionNumber,
+    contentHash: record.contentHash,
+    namespace: record.namespace,
+    vectorProvider: record.vectorProvider,
+    chunkCount: record.chunkCount || 0,
+    status: record.status || 'building',
+    activatedAt: null,
+    retiredAt: null,
+    deletedAt: null,
+    createdAt: now,
+    updatedAt: now
+  };
+  db.knowledgeBaseVersions.push(version);
+  await writeDb(db);
+  return version;
+}
+
+export async function activateKnowledgeBaseVersion(id) {
+  const db = await readDb();
+  const version = db.knowledgeBaseVersions.find((item) => item.id === id);
+  if (!version) return null;
+  const now = new Date().toISOString();
+  for (const item of db.knowledgeBaseVersions) {
+    if (item.resumeId === version.resumeId && item.status === 'active' && item.id !== id) {
+      item.status = 'retired';
+      item.retiredAt = now;
+      item.updatedAt = now;
+    }
+  }
+  version.status = 'active';
+  version.activatedAt = now;
+  version.updatedAt = now;
+  await writeDb(db);
+  return version;
+}
+
+export async function listKnowledgeBaseVersions({ resumeId, status, retiredBefore } = {}) {
+  const db = await readDb();
+  return db.knowledgeBaseVersions
+    .filter((item) => !resumeId || item.resumeId === resumeId)
+    .filter((item) => !status || item.status === status)
+    .filter((item) => !retiredBefore || (item.retiredAt && item.retiredAt <= retiredBefore))
+    .sort((a, b) => b.versionNumber - a.versionNumber);
+}
+
+export async function updateKnowledgeBaseVersion(id, patch = {}) {
+  const db = await readDb();
+  const version = db.knowledgeBaseVersions.find((item) => item.id === id);
+  if (!version) return null;
+  Object.assign(version, patch, { updatedAt: new Date().toISOString() });
+  await writeDb(db);
+  return version;
 }
 
 export async function saveResumeVersion(record = {}) {
@@ -434,6 +504,8 @@ export async function createApplication(record = {}) {
     status: record.status || 'saved',
     appliedAt: record.appliedAt || null,
     interviewAt: record.interviewAt || null,
+    reminderAt: record.reminderAt || null,
+    reminderDone: Boolean(record.reminderDone),
     nextAction: record.nextAction || '',
     result: record.result || '',
     notes: record.notes || '',
@@ -460,7 +532,7 @@ export async function updateApplication(id, patch = {}) {
   const db = await readDb();
   const application = db.applications.find((item) => item.id === id);
   if (!application) return null;
-  for (const key of ['resumeVersionId', 'status', 'appliedAt', 'interviewAt', 'nextAction', 'result', 'notes']) {
+  for (const key of ['resumeVersionId', 'status', 'appliedAt', 'interviewAt', 'reminderAt', 'reminderDone', 'nextAction', 'result', 'notes']) {
     if (patch[key] !== undefined) application[key] = patch[key];
   }
   if (Array.isArray(patch.sessionIds)) {
@@ -478,4 +550,70 @@ export async function deleteApplication(id) {
   if (before === db.applications.length) return false;
   await writeDb(db);
   return true;
+}
+
+function memoryMatches(item, filters = {}) {
+  if (filters.ids?.length && !filters.ids.includes(item.id)) return false;
+  if (filters.scopes?.length && !filters.scopes.includes(item.scope)) return false;
+  if (filters.types?.length && !filters.types.includes(item.type)) return false;
+  for (const field of ['userId', 'resumeId', 'sessionId', 'jobId', 'runId', 'sourceKind', 'sourceId', 'status', 'contentHash', 'scope', 'type']) {
+    if (filters[field] !== undefined && (item[field] ?? null) !== (filters[field] ?? null)) return false;
+  }
+  if (!filters.includeExpired && item.expiresAt && new Date(item.expiresAt).getTime() <= Date.now()) return false;
+  const query = String(filters.query || '').trim().toLowerCase();
+  if (query && !`${item.title || ''}\n${item.content || ''}`.toLowerCase().includes(query)) return false;
+  return true;
+}
+
+export async function findMemoryRecord(filters = {}) {
+  const db = await readDb();
+  return db.memories.find((item) => memoryMatches(item, { ...filters, includeExpired: true })) || null;
+}
+
+export async function createMemoryRecord(data = {}) {
+  const db = await readDb();
+  const now = new Date().toISOString();
+  const row = {
+    id: data.id || nowId('memory'),
+    accessCount: 0,
+    createdAt: now,
+    updatedAt: now,
+    ...data
+  };
+  db.memories.push(row);
+  await writeDb(db);
+  return row;
+}
+
+export async function updateMemoryRecord(id, patch = {}) {
+  const db = await readDb();
+  const row = db.memories.find((item) => item.id === id);
+  if (!row) return null;
+  Object.assign(row, patch, { updatedAt: new Date().toISOString() });
+  await writeDb(db);
+  return row;
+}
+
+export async function listMemoryRecords(filters = {}, limit = 10) {
+  const db = await readDb();
+  return db.memories
+    .filter((item) => memoryMatches(item, filters))
+    .sort((a, b) =>
+      (Number(b.importance || 0) - Number(a.importance || 0))
+      || (Number(b.confidence || 0) - Number(a.confidence || 0))
+      || (new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()))
+    .slice(0, limit);
+}
+
+export async function touchMemoryRecords(ids = []) {
+  const db = await readDb();
+  const now = new Date().toISOString();
+  const idSet = new Set(ids);
+  for (const row of db.memories) {
+    if (!idSet.has(row.id)) continue;
+    row.accessCount = Number(row.accessCount || 0) + 1;
+    row.lastAccessedAt = now;
+    row.updatedAt = now;
+  }
+  await writeDb(db);
 }

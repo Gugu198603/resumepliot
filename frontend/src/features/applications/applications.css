@@ -86,6 +86,141 @@
   font-size: 12px;
 }
 
+.application-reminder {
+  display: inline-flex;
+  width: fit-content;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--text-soft);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.application-reminder.soon {
+  background: rgba(196, 151, 91, 0.16);
+  color: #8b6333;
+}
+
+.application-reminder.overdue {
+  background: rgba(183, 93, 84, 0.14);
+  color: #98554f;
+}
+
+.application-reminder.done {
+  background: rgba(112, 143, 105, 0.16);
+  color: #607c5b;
+}
+
+.application-detail-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(55, 46, 41, 0.28);
+  backdrop-filter: blur(3px);
+}
+
+.application-detail-panel {
+  width: min(680px, 100%);
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 18px;
+  padding: 24px;
+  overflow: hidden;
+  background: var(--surface-strong);
+  box-shadow: -20px 0 60px rgba(64, 49, 42, 0.18);
+}
+
+.application-detail-panel > header,
+.application-detail-panel > footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.application-detail-panel > header h2,
+.application-detail-panel > header p {
+  margin: 4px 0;
+}
+
+.application-detail-panel > footer {
+  justify-content: flex-end;
+  align-items: center;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.application-detail-form {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+  gap: 14px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.application-detail-form > label {
+  display: grid;
+  gap: 7px;
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.application-detail-form .wide {
+  grid-column: 1 / -1;
+}
+
+.application-detail-form textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+
+.application-reminder-check {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  align-self: end;
+  min-height: 44px;
+}
+
+.application-reminder-check input,
+.application-session-options input {
+  width: auto;
+}
+
+.application-detail-form fieldset {
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.application-detail-form legend {
+  padding: 0 6px;
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.application-session-options {
+  display: grid;
+  gap: 8px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.application-session-options label {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px;
+  align-items: center;
+}
+
 @media (max-width: 900px) {
   .application-create {
     grid-template-columns: 1fr;
@@ -93,5 +228,13 @@
 
   .application-form {
     grid-template-columns: 1fr;
+  }
+
+  .application-detail-form {
+    grid-template-columns: 1fr;
+  }
+
+  .application-detail-form .wide {
+    grid-column: auto;
   }
 }

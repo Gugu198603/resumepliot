@@ -31,6 +31,28 @@ model Resume {
   memories     MemoryItem[]
   corrections  ResumeCorrectionEvent[]
   versions     ResumeVersion[]
+  knowledgeBaseVersions KnowledgeBaseVersion[]
+}
+
+model KnowledgeBaseVersion {
+  id            String   @id @default(cuid())
+  resumeId      String
+  versionNumber Int
+  contentHash   String
+  namespace     String   @unique
+  vectorProvider String
+  chunkCount    Int      @default(0)
+  status        String   @default("building")
+  activatedAt   DateTime?
+  retiredAt     DateTime?
+  deletedAt     DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  resume        Resume   @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+
+  @@unique([resumeId, versionNumber])
+  @@index([resumeId, status])
+  @@index([status, retiredAt])
 }
 
 model ResumeVersion {
@@ -174,6 +196,8 @@ model Application {
   status          String   @default("saved")
   appliedAt       DateTime?
   interviewAt     DateTime?
+  reminderAt      DateTime?
+  reminderDone    Boolean  @default(false)
   nextAction      String?
   result          String?
   notes           String?

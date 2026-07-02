@@ -1,9 +1,27 @@
 import { listTools, callTool } from './server.js';
 
+const SUPPORTED_PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26'];
+
 export async function handleMcpRequest(message) {
   const { method, params = {}, id = null } = message || {};
 
   try {
+    if (method === 'initialize') {
+      const requested = params.protocolVersion;
+      const protocolVersion = SUPPORTED_PROTOCOL_VERSIONS.includes(requested)
+        ? requested
+        : SUPPORTED_PROTOCOL_VERSIONS[0];
+      return {
+        jsonrpc: '2.0',
+        id,
+        result: {
+          protocolVersion,
+          capabilities: { tools: { listChanged: false } },
+          serverInfo: { name: 'resumepilot-mcp', version: '0.2.0' }
+        }
+      };
+    }
+    if (method === 'notifications/initialized') return null;
     if (method === 'tools/list') {
       return {
         jsonrpc: '2.0',
@@ -18,7 +36,11 @@ export async function handleMcpRequest(message) {
       return {
         jsonrpc: '2.0',
         id,
-        result
+        result: {
+          content: [{ type: 'text', text: JSON.stringify(result) }],
+          structuredContent: result,
+          isError: false
+        }
       };
     }
 
@@ -36,7 +58,8 @@ export async function handleMcpRequest(message) {
       id,
       error: {
         code: -32000,
-        message: error.message
+        message: error.message,
+        data: { code: error.code || 'MCP_TOOL_ERROR' }
       }
     };
   }

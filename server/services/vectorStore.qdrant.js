@@ -185,6 +185,20 @@ export async function searchMemoryPoints({ namespaces = [], query = '', limit = 
     .slice(0, limit);
 }
 
+export async function deleteVectorNamespace(namespace) {
+  if (!String(namespace || '').trim()) return { deleted: false, namespace };
+  await ensureCollection();
+  await qdrantFetch(`/collections/${QDRANT_COLLECTION}/points/delete?wait=true`, {
+    method: 'POST',
+    body: JSON.stringify({
+      filter: {
+        must: [{ key: 'namespace', match: { value: namespace } }]
+      }
+    })
+  });
+  return { deleted: true, namespace };
+}
+
 export async function debugCollectionInfo() {
   return await qdrantFetch(`/collections/${QDRANT_COLLECTION}`);
 }

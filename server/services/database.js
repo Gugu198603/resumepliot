@@ -64,6 +64,22 @@ export async function deleteResume(id) {
   return await provider.deleteResume(id);
 }
 
+export async function createKnowledgeBaseVersion(record) {
+  return await (await getProvider()).createKnowledgeBaseVersion(record);
+}
+
+export async function activateKnowledgeBaseVersion(id) {
+  return await (await getProvider()).activateKnowledgeBaseVersion(id);
+}
+
+export async function listKnowledgeBaseVersions(filters) {
+  return await (await getProvider()).listKnowledgeBaseVersions(filters);
+}
+
+export async function updateKnowledgeBaseVersion(id, patch) {
+  return await (await getProvider()).updateKnowledgeBaseVersion(id, patch);
+}
+
 export async function saveRunRecord(record) {
   const provider = await getProvider();
   return await provider.saveRunRecord(record);
@@ -192,4 +208,24 @@ export async function updateApplication(id, patch) {
 
 export async function deleteApplication(id) {
   return await (await getProvider()).deleteApplication(id);
+}
+
+export async function findMemoryRecord(filters) {
+  return await (await getProvider()).findMemoryRecord(filters);
+}
+
+export async function createMemoryRecord(data) {
+  return await (await getProvider()).createMemoryRecord(data);
+}
+
+export async function updateMemoryRecord(id, patch) {
+  return await (await getProvider()).updateMemoryRecord(id, patch);
+}
+
+export async function listMemoryRecords(filters, limit) {
+  return await (await getProvider()).listMemoryRecords(filters, limit);
+}
+
+export async function touchMemoryRecords(ids) {
+  return await (await getProvider()).touchMemoryRecords(ids);
 }

@@ -1,0 +1,12 @@
+{
+  "id": "resume-analysis",
+  "name": "Resume Analysis",
+  "version": "1.0.0",
+  "description": "解析简历结构、识别风险词和评估面试准备度。",
+  "triggers": ["分析简历", "简历解析", "简历风险", "简历诊断", "准备度分析", "resume analysis", "resume risk"],
+  "inputSchema": { "type": "object", "required": ["goal"], "properties": { "goal": { "type": "string" }, "text": { "type": "string" } } },
+  "outputSchema": { "type": "object", "required": ["parseOutput"], "properties": { "parseOutput": { "type": "object" }, "retrieved": { "type": "array" } } },
+  "allowedTools": ["parse_resume", "search_resume_chunks"],
+  "routing": { "minConfidence": 0.45 },
+  "runtime": { "timeoutMs": 90000, "maxToolCalls": 6, "maxSameToolCalls": 3 }
+}

@@ -1,0 +1,12 @@
+{
+  "id": "resume-generation-skill",
+  "name": "Resume Generation",
+  "version": "1.0.0",
+  "description": "从已确认的候选人资料生成可校验、可导出的结构化简历。",
+  "triggers": ["生成简历", "导出简历", "创建简历", "结构化简历", "JSON Resume", "generate resume", "export resume"],
+  "inputSchema": { "type": "object", "required": ["goal"], "properties": { "goal": { "type": "string" }, "text": { "type": "string" } } },
+  "outputSchema": { "type": "object", "required": ["artifact"], "properties": { "artifact": { "type": "object" }, "validation": { "type": "object" } } },
+  "allowedTools": ["parse_resume", "search_resume_chunks", "rewrite_resume"],
+  "routing": { "minConfidence": 0.45 },
+  "runtime": { "timeoutMs": 120000, "maxToolCalls": 8, "maxSameToolCalls": 3 }
+}

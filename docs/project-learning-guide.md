@@ -99,6 +99,10 @@ ResumePilot 是一个 AI 求职助手原型，核心目标是把“上传简历 
 - `server/agents/`：具体 Agent 角色实现。
 - `server/prompts/`：Agent 的系统提示词。
 - `server/router/`：skill 路由。
+- `datasets/skill-router.v1.json`：Skill 分类器的 train/validation/test 数据与 unknown 负样本。
+- `models/skill-router/`：可复现的模型产物、数据集哈希与路由阈值。
+- `server/experiments/embeddingSkillClassifier.js`：BGE 原型分类和冻结 Encoder 分类头训练。
+- `reports/skill-router-model-comparison.v1.json`：三种路由模型的质量、拒绝率与延迟对照。
 - `server/mcp/`：本地 MCP 工具注册与调用骨架。
 - `skills/`：平台 skill 定义，其中 `resume-generation-skill` 是 Python 实现。
 - `prisma/`：数据模型与迁移。
@@ -117,6 +121,7 @@ ResumePilot 是一个 AI 求职助手原型，核心目标是把“上传简历 
 - `JobDescription`：岗位描述。
 - `JobMatch`：岗位与简历匹配结果。
 - `MemoryItem`：长期记忆与向量记忆。
+- `KnowledgeBaseVersion`：每次简历知识库重建的内容哈希、namespace、向量 provider 和生命周期。
 - `ResumeCorrectionEvent`：用户人工纠偏记录。
 
 这个项目的关键设计是：`Run` 记录一次执行结果，`RunEvent` 记录执行过程。学习 Agent 稳定性和可观测性时，优先看这两个模型。
@@ -232,4 +237,3 @@ OPENAI_MODEL=gpt-4o-mini
 - Agent 相关改动必须保留硬性执行守卫，避免死循环和异常费用。
 - 页面布局不要在根级使用 `height: 100vh` 加 `overflow: hidden` 锁死滚动，除非明确处理了内部滚动区域。
 - Qdrant point id 必须是 UUID 或整数。
-

@@ -7,15 +7,16 @@ export const parseResumeTool = {
   inputSchema: {
     type: 'object',
     properties: {
-      text: { type: 'string', description: 'Resume text content.' }
+      text: { type: 'string', description: 'Resume text content.' },
+      buildKb: { type: 'boolean', description: 'Whether to build retrieval chunks during parsing.' }
     },
     required: ['text']
   },
-  async handler({ text }) {
+  async handler({ text, buildKb = true }) {
     const normalized = normalizeText(text || '');
     const sections = splitSections(normalized);
     const risks = detectRisks(normalized);
-    const kb = await buildKnowledgeBase(normalized);
+    const kb = buildKb ? await buildKnowledgeBase(normalized) : [];
     return {
       text: normalized,
       sections,

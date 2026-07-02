@@ -44,6 +44,16 @@ applicationRouter.get('/applications', asyncRoute(async (_req, res) => {
   res.json({ applications: await listApplications() });
 }));
 
+applicationRouter.get('/application-reminders', asyncRoute(async (req, res) => {
+  const dueBefore = req.query?.dueBefore ? new Date(String(req.query.dueBefore)) : new Date(Date.now() + 24 * 60 * 60 * 1000);
+  if (Number.isNaN(dueBefore.getTime())) throw new HttpError(400, 'INVALID_DATE', 'dueBefore 不是有效日期。');
+  const reminders = (await listApplications())
+    .filter((application) => application.reminderAt && !application.reminderDone)
+    .filter((application) => new Date(application.reminderAt).getTime() <= dueBefore.getTime())
+    .sort((a, b) => new Date(a.reminderAt).getTime() - new Date(b.reminderAt).getTime());
+  res.json({ reminders, dueBefore: dueBefore.toISOString() });
+}));
+
 applicationRouter.get('/applications/:id', asyncRoute(async (req, res) => {
   const application = await getApplication(req.params.id);
   if (!application) throw new HttpError(404, 'APPLICATION_NOT_FOUND', 'Application not found');
@@ -63,6 +73,8 @@ applicationRouter.post('/applications', asyncRoute(async (req, res) => {
     status: normalizeApplicationStatus(req.body?.status),
     appliedAt: normalizeDate(req.body?.appliedAt, 'appliedAt'),
     interviewAt: normalizeDate(req.body?.interviewAt, 'interviewAt'),
+    reminderAt: normalizeDate(req.body?.reminderAt, 'reminderAt'),
+    reminderDone: Boolean(req.body?.reminderDone),
     nextAction: String(req.body?.nextAction || '').trim(),
     result: String(req.body?.result || '').trim(),
     notes: String(req.body?.notes || '').trim()
@@ -88,6 +100,8 @@ applicationRouter.patch('/applications/:id', asyncRoute(async (req, res) => {
   if (req.body?.sessionIds !== undefined) patch.sessionIds = normalizeIds(req.body.sessionIds);
   if (req.body?.appliedAt !== undefined) patch.appliedAt = normalizeDate(req.body.appliedAt, 'appliedAt');
   if (req.body?.interviewAt !== undefined) patch.interviewAt = normalizeDate(req.body.interviewAt, 'interviewAt');
+  if (req.body?.reminderAt !== undefined) patch.reminderAt = normalizeDate(req.body.reminderAt, 'reminderAt');
+  if (req.body?.reminderDone !== undefined) patch.reminderDone = Boolean(req.body.reminderDone);
   for (const field of ['nextAction', 'result', 'notes']) {
     if (req.body?.[field] !== undefined) patch[field] = String(req.body[field] || '').trim();
   }

@@ -1,0 +1,32 @@
+{
+  "id": "resumepilot-rag-golden",
+  "version": "1.0.0",
+  "thresholds": {
+    "hitRate": 1,
+    "recallAtK": 0.75,
+    "mrrAtK": 0.75
+  },
+  "cases": [
+    {
+      "id": "rag-retrieval",
+      "query": "RAG 召回质量如何优化",
+      "topK": 2,
+      "corpus": "项目经历\n负责企业知识库 RAG 系统，使用 BGE embedding 与 Qdrant 向量检索。通过查询改写、混合召回和 rerank，将 Top-3 召回率从 71% 提升到 89%。\n其他经历\n维护 Node.js API 服务。",
+      "relevantTerms": ["rag", "qdrant", "召回率", "rerank"]
+    },
+    {
+      "id": "frontend-performance",
+      "query": "React 前端性能优化经验",
+      "topK": 2,
+      "corpus": "项目经历\n使用 React 与 Vite 重构招聘工作台，通过路由懒加载、虚拟列表和 bundle 分析将首屏时间降低 35%。\n技能\nTypeScript、Node.js、PostgreSQL。",
+      "relevantTerms": ["react", "vite", "虚拟列表", "首屏"]
+    },
+    {
+      "id": "agent-interview",
+      "query": "多 Agent 面试评价与记忆",
+      "topK": 2,
+      "corpus": "项目经历\n设计多 Agent 模拟面试系统，由 retriever、interviewer、critic 和 writer 协作。使用 Session Memory 保留历史回答，并生成结构化面试评分报告。\n技能\nLangGraph、SSE、MCP。",
+      "relevantTerms": ["agent", "session memory", "critic", "评分"]
+    }
+  ]
+}

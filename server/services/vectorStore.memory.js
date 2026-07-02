@@ -25,4 +25,8 @@ export async function searchMemoryPoints() {
   return [];
 }
 
+export async function deleteVectorNamespace(namespace) {
+  return { deleted: true, namespace, noop: true };
+}
+
 export const provider = 'memory';

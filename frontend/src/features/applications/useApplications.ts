@@ -15,6 +15,10 @@ export function useApplications(setLoading: (message: string | null) => void) {
     sessionIds?: string[];
     nextAction?: string;
     notes?: string;
+    interviewAt?: string | null;
+    reminderAt?: string | null;
+    reminderDone?: boolean;
+    result?: string;
   }) {
     setLoading('正在创建求职申请...');
     try {

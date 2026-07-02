@@ -15,7 +15,7 @@ let embedderPromise = null;
 
 function getEmbedder() {
   if (!embedderPromise) {
-    console.log(`[embedder] loading ${EMBED_MODEL}...`);
+    console.error(`[embedder] loading ${EMBED_MODEL}...`);
     embedderPromise = pipeline('feature-extraction', EMBED_MODEL, { quantized: true });
   }
   return embedderPromise;

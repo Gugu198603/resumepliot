@@ -11,6 +11,9 @@ function eventTitle(event: RunEvent) {
     run_transition: '状态迁移',
     orchestrator_decision: '调度决策',
     memory_loaded: '加载记忆',
+    tool_call_start: '工具调用开始',
+    tool_call_success: '工具调用成功',
+    tool_call_error: '工具调用失败',
     step_start: '开始执行',
     rag_retrieval: 'RAG 检索',
     agent_observation: '协作观察',
@@ -33,6 +36,9 @@ function eventDescription(event: RunEvent) {
   }
   if (event.type === 'agent_observation') {
     return [payload.observation, payload.proposal ? `建议：${payload.proposal}` : ''].filter(Boolean).join(' ');
+  }
+  if (event.type?.startsWith('tool_call_')) {
+    return `工具 ${payload.toolName || '-'}${event.latencyMs != null ? `，耗时 ${event.latencyMs} ms` : ''}`;
   }
   if (event.type === 'step_start') return payload.text || 'Agent 开始处理共享 workspace。';
   if (event.errorMessage) return event.errorMessage;

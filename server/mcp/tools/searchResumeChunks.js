@@ -1,4 +1,4 @@
-import { buildKnowledgeBase, retrieveTopK } from '../../services/vectorStore.js';
+import { retrieveContext } from '../../agents/retriever.js';
 
 export const searchResumeChunksTool = {
   name: 'search_resume_chunks',
@@ -8,13 +8,22 @@ export const searchResumeChunksTool = {
     properties: {
       text: { type: 'string', description: 'Resume text content.' },
       query: { type: 'string', description: 'Search query.' },
-      topK: { type: 'number', description: 'Number of chunks to return.' }
+      topK: { type: 'number', description: 'Number of chunks to return.' },
+      resumeId: { type: 'string', description: 'Optional persisted resume id.' },
+      sessionTurns: { type: 'array', description: 'Optional prior interview turns.', items: { type: 'object' } }
     },
     required: ['text', 'query']
   },
-  async handler({ text, query, topK = 3 }) {
-    const kb = await buildKnowledgeBase(text || '');
-    const retrieved = await retrieveTopK(kb, query || '', topK);
-    return { retrieved };
+  async handler({ text, query, topK = 3, resumeId = null, sessionTurns = [] }) {
+    const result = await retrieveContext({ text, query, topK, resumeId, sessionTurns });
+    return {
+      query: result.query,
+      topK: result.topK,
+      retrieved: result.retrieved,
+      resumeResults: result.resumeResults,
+      historyResults: result.historyResults,
+      resumeId: result.resumeId,
+      kbSource: result.kbSource
+    };
   }
 };

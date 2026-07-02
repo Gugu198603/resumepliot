@@ -66,7 +66,9 @@ export async function saveResumeRecord(record) {
         risks: record.risks || [],
         kbSize: record.kbSize || 0,
         chunks: record.chunks || [],
-        vectorProvider: record.vectorProvider || null
+        vectorProvider: record.vectorProvider || null,
+        knowledgeBaseVersionId: record.knowledgeBaseVersionId || null,
+        knowledgeBaseVersion: record.knowledgeBaseVersion || null
       })
     }
   });
@@ -84,6 +86,8 @@ function mapResume(record) {
     kbSize: parsed.kbSize || 0,
     chunks: parsed.chunks || [],
     vectorProvider: parsed.vectorProvider || null,
+    knowledgeBaseVersionId: parsed.knowledgeBaseVersionId || null,
+    knowledgeBaseVersion: parsed.knowledgeBaseVersion || null,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt
   };
@@ -112,6 +116,8 @@ export async function updateResume(id, patch = {}) {
   if (Number.isFinite(patch.kbSize)) parsedPatch.kbSize = patch.kbSize;
   if (Array.isArray(patch.chunks)) parsedPatch.chunks = patch.chunks;
   if (patch.vectorProvider !== undefined) parsedPatch.vectorProvider = patch.vectorProvider || null;
+  if (patch.knowledgeBaseVersionId !== undefined) parsedPatch.knowledgeBaseVersionId = patch.knowledgeBaseVersionId || null;
+  if (Number.isFinite(patch.knowledgeBaseVersion)) parsedPatch.knowledgeBaseVersion = patch.knowledgeBaseVersion;
   if (Object.keys(parsedPatch).length) {
     data.parsedJson = toJsonString({
       sections: current.sections || [],
@@ -119,6 +125,8 @@ export async function updateResume(id, patch = {}) {
       kbSize: current.kbSize || 0,
       chunks: current.chunks || [],
       vectorProvider: current.vectorProvider || null,
+      knowledgeBaseVersionId: current.knowledgeBaseVersionId || null,
+      knowledgeBaseVersion: current.knowledgeBaseVersion || null,
       ...parsedPatch
     });
   }
@@ -178,6 +186,59 @@ export async function deleteResume(id) {
   } catch {
     return false;
   }
+}
+
+export async function createKnowledgeBaseVersion(record = {}) {
+  const client = await getPrisma();
+  return await client.knowledgeBaseVersion.create({
+    data: {
+      ...(record.id ? { id: record.id } : {}),
+      resumeId: record.resumeId,
+      versionNumber: record.versionNumber,
+      contentHash: record.contentHash,
+      namespace: record.namespace,
+      vectorProvider: record.vectorProvider,
+      chunkCount: record.chunkCount || 0,
+      status: record.status || 'building'
+    }
+  });
+}
+
+export async function activateKnowledgeBaseVersion(id) {
+  const client = await getPrisma();
+  const version = await client.knowledgeBaseVersion.findUnique({ where: { id } });
+  if (!version) return null;
+  const now = new Date();
+  return await client.$transaction(async (tx) => {
+    await tx.knowledgeBaseVersion.updateMany({
+      where: { resumeId: version.resumeId, status: 'active', id: { not: id } },
+      data: { status: 'retired', retiredAt: now }
+    });
+    return await tx.knowledgeBaseVersion.update({
+      where: { id },
+      data: { status: 'active', activatedAt: now }
+    });
+  });
+}
+
+export async function listKnowledgeBaseVersions({ resumeId, status, retiredBefore } = {}) {
+  const client = await getPrisma();
+  return await client.knowledgeBaseVersion.findMany({
+    where: {
+      ...(resumeId ? { resumeId } : {}),
+      ...(status ? { status } : {}),
+      ...(retiredBefore ? { retiredAt: { lte: new Date(retiredBefore) } } : {})
+    },
+    orderBy: [{ resumeId: 'asc' }, { versionNumber: 'desc' }]
+  });
+}
+
+export async function updateKnowledgeBaseVersion(id, patch = {}) {
+  const data = { ...patch };
+  for (const field of ['activatedAt', 'retiredAt', 'deletedAt']) {
+    if (data[field] && !(data[field] instanceof Date)) data[field] = new Date(data[field]);
+  }
+  return await (await getPrisma()).knowledgeBaseVersion.update({ where: { id }, data });
 }
 
 export async function saveRunRecord(record) {
@@ -584,6 +645,8 @@ async function enrichApplication(client, record) {
     status: record.status,
     appliedAt: record.appliedAt,
     interviewAt: record.interviewAt,
+    reminderAt: record.reminderAt,
+    reminderDone: record.reminderDone,
     nextAction: record.nextAction || '',
     result: record.result || '',
     notes: record.notes || '',
@@ -605,6 +668,8 @@ export async function createApplication(record = {}) {
       status: record.status || 'saved',
       appliedAt: record.appliedAt ? new Date(record.appliedAt) : null,
       interviewAt: record.interviewAt ? new Date(record.interviewAt) : null,
+      reminderAt: record.reminderAt ? new Date(record.reminderAt) : null,
+      reminderDone: Boolean(record.reminderDone),
       nextAction: record.nextAction || null,
       result: record.result || null,
       notes: record.notes || null
@@ -627,12 +692,13 @@ export async function getApplication(id) {
 export async function updateApplication(id, patch = {}) {
   const client = await getPrisma();
   const data = {};
-  for (const key of ['resumeVersionId', 'status', 'nextAction', 'result', 'notes']) {
+  for (const key of ['resumeVersionId', 'status', 'nextAction', 'result', 'notes', 'reminderDone']) {
     if (patch[key] !== undefined) data[key] = patch[key] || null;
   }
   if (patch.sessionIds !== undefined) data.sessionIdsJson = toJsonString(patch.sessionIds || []);
   if (patch.appliedAt !== undefined) data.appliedAt = patch.appliedAt ? new Date(patch.appliedAt) : null;
   if (patch.interviewAt !== undefined) data.interviewAt = patch.interviewAt ? new Date(patch.interviewAt) : null;
+  if (patch.reminderAt !== undefined) data.reminderAt = patch.reminderAt ? new Date(patch.reminderAt) : null;
   try {
     return enrichApplication(client, await client.application.update({ where: { id }, data }));
   } catch {
@@ -648,6 +714,52 @@ export async function deleteApplication(id) {
   } catch {
     return false;
   }
+}
+
+function memoryWhere(filters = {}) {
+  const where = {};
+  if (filters.ids?.length) where.id = { in: filters.ids };
+  if (filters.scopes?.length) where.scope = { in: filters.scopes };
+  if (filters.types?.length) where.type = { in: filters.types };
+  for (const field of ['userId', 'resumeId', 'sessionId', 'jobId', 'runId', 'sourceKind', 'sourceId', 'status', 'contentHash', 'scope', 'type']) {
+    if (filters[field] !== undefined) where[field] = filters[field];
+  }
+  if (!filters.includeExpired) {
+    where.OR = [{ expiresAt: null }, { expiresAt: { gt: new Date() } }];
+  }
+  const query = String(filters.query || '').trim();
+  if (query) {
+    where.AND = [{ OR: [{ title: { contains: query } }, { content: { contains: query } }] }];
+  }
+  return where;
+}
+
+export async function findMemoryRecord(filters = {}) {
+  return await (await getPrisma()).memoryItem.findFirst({ where: memoryWhere({ ...filters, includeExpired: true }) });
+}
+
+export async function createMemoryRecord(data = {}) {
+  return await (await getPrisma()).memoryItem.create({ data });
+}
+
+export async function updateMemoryRecord(id, patch = {}) {
+  return await (await getPrisma()).memoryItem.update({ where: { id }, data: patch });
+}
+
+export async function listMemoryRecords(filters = {}, limit = 10) {
+  return await (await getPrisma()).memoryItem.findMany({
+    where: memoryWhere(filters),
+    orderBy: [{ importance: 'desc' }, { confidence: 'desc' }, { updatedAt: 'desc' }],
+    take: limit
+  });
+}
+
+export async function touchMemoryRecords(ids = []) {
+  if (!ids.length) return;
+  await (await getPrisma()).memoryItem.updateMany({
+    where: { id: { in: ids } },
+    data: { accessCount: { increment: 1 }, lastAccessedAt: new Date() }
+  });
 }
 
 export function isPrismaAvailable() {

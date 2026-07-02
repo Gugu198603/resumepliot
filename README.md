@@ -13,7 +13,12 @@
 - PDF / 文本简历导入与结构化拆分
 - 风险术语识别
 - 真实语义检索（BGE-M3 embedding + 内存 / Qdrant 向量库）
+- KnowledgeBaseVersion 生命周期：独立 namespace、激活/退役状态和 Qdrant 数据清理
+- 版本化 RAG Golden Dataset，使用 HitRate、Recall@K、MRR@K 作为 CI Gate
+- Skill Router 分类数据集与可解释分类模型，支持 unknown 拒绝和规则/模型融合
 - 多 Agent 面试追问、回答评估、精简版 / 详细版简历改写
+- Agent 长期记忆：Run Summary 跨轮召回、按简历/会话/岗位隔离、去重、晋升与过期过滤
+- MCP Tool Gateway：Agent 工具白名单、参数校验、超时和 Run Event 审计
 - SQLite + Prisma 持久化，历史运行 / 会话可回看
 - 岗位 JD 对比并落库，匹配历史可回看
 - 岗位-简历差距报告：差距总结 + 命中/缺失关键词，可从已抓取岗位库直接选岗对比
@@ -24,6 +29,7 @@
 - 简历版本管理与字段级 diff；岗位定向版本可导出 DOCX，浏览器打印导出 PDF
 - 面试七维评分与会话复盘：具体性、技术深度、可信度、STAR、量化、清晰度、岗位相关性
 - 上传大小/类型限制、URL SSRF 防护、CORS 白名单、限流与可选 Bearer Token
+- 求职申请看板：关联岗位、定向简历版本和面试练习，跟踪收藏、准备、投递、面试与结果状态
 
 ## 产品闭环
 
@@ -32,6 +38,7 @@
 3. 基于目标岗位生成简历，在事实校验通过后保存为版本。
 4. 对版本做字段级 diff，并导出 DOCX 或通过浏览器打印为 PDF。
 5. 使用同一份简历开始模拟面试；每轮保存量化评分，最终在面试记录中查看薄弱项。
+6. 创建求职申请并绑定岗位、简历版本与面试记录，持续维护投递状态和下一步行动。
 
 相关接口：
 
@@ -40,6 +47,9 @@
 - `GET /api/resume-versions/:id/diff?baseId=...`
 - `GET /api/resume-versions/:id/export.docx`
 - `GET /api/sessions/:id/report`
+- `GET|POST /api/applications`
+- `GET|PATCH|DELETE /api/applications/:id`
+- `GET /api/application-reminders?dueBefore=...`
 
 ## 目录结构
 
@@ -64,6 +74,9 @@ npm run dev
 
 ```bash
 npm test
+npm run test:rag
+npm run test:skill-router
+npm run experiment:orchestration -- 50
 ```
 
 真实 HTTP/SSE 集成测试需要监听临时本机端口，单独运行：
@@ -76,10 +89,10 @@ RUN_HTTP_INTEGRATION=true node --test tests/apiIntegration.test.js
 
 ## 下一步可做的方向
 
-- 面试评分体系与可量化反馈报告
-- 简历改写版本对比与一键导出
-- 岗位抓取扩展更多数据源（LinkedIn / 自建爬虫）
-- 登录、作品集、分享链接；语音面试模式
+- 登录与按用户隔离简历、会话、求职申请
+- Playwright 主链路测试与 CI
+- 岗位提醒、日程与下一步行动通知
+- Skill Router 分类模型、Embedding 对比/微调和 LoRA 面试评价模型
 
 ## 可直接写进简历的项目描述
 
@@ -113,24 +126,71 @@ RUN_HTTP_INTEGRATION=true node --test tests/apiIntegration.test.js
 - `skills/interview-training/SKILL.md`
 - `skills/resume-analysis/SKILL.md`
 - `skills/resume-rewrite/SKILL.md`
+- `skills/resume-generation-skill/SKILL.md`
 
-这些 skill 用于定义“什么时候触发 + 如何执行 + 输出原则”。
+每个目录同时包含 `manifest.json`，声明 Skill 版本、触发词、输入/输出 Schema、
+允许调用的工具、运行预算和最低路由置信度。低于阈值时路由器拒绝猜测 Skill。
 
-## MCP server 骨架
+Skill Router 使用版本化数据集 `datasets/skill-router.v1.json` 和字符 n-gram
+多项式朴素贝叶斯模型。训练集包含四个 Skill 和 `unknown` 负样本，validation
+用于校准最低置信度与 margin，test 只用于质量门禁：
+
+```bash
+npm run train:skill-router
+npm run test:skill-router
+npm run train:skill-router:embeddings
+npm run test:skill-router:embeddings
+npm run experiment:skill-router
+```
+
+模型产物位于 `models/skill-router/naive-bayes-v1.json`，记录数据集哈希、模型版本、
+阈值与评测指标。`POST /api/skill-route` 返回规则分、模型概率、融合分与拒绝原因；
+`GET /api/skill-router/model` 返回当前模型元数据。
+
+Embedding 对照实验复用同一数据集，比较：
+
+- 字符 n-gram 朴素贝叶斯
+- 冻结 BGE-M3 + 类别向量原型
+- 冻结 BGE-M3 + 可训练 Softmax 分类头
+
+实验报告位于 `reports/skill-router-model-comparison.v1.json`，同时记录 Accuracy、
+Macro-F1、unknown recall、coverage、编码耗时和分类头耗时。当前 Softmax 实验只训练
+分类头，不代表 BGE Encoder 已完成微调。模型元数据可通过
+`GET /api/skill-router/embedding-experiment` 查看。
+
+## MCP Tool Runtime
 
 - `server/mcp/server.js`
+- `server/mcp/sdkServer.js`
+- `server/mcp/stdio.js`
+- `server/mcp/externalClient.js`
 - `server/mcp/tools/parseResume.js`
 - `server/mcp/tools/searchResumeChunks.js`
 - `server/mcp/tools/evaluateAnswer.js`
 - `server/mcp/tools/rewriteResume.js`
 
-当前 MCP 层是一个本地骨架，已经具备：
+当前 MCP 层已经具备：
 - tool list
 - tool call
+- initialize / capabilities 协商
 - input schema
+- 标准 content + structuredContent 返回
+- Agent Tool Gateway 权限、超时与审计
+- SDK 原生 stdio Server Transport
+- `/api/mcp` 无状态 Streamable HTTP Server Transport
+- 外部 stdio / Streamable HTTP MCP Client 与连接复用
 - 通用 resume parsing / retrieval / evaluate / rewrite 工具
 
-你下一步可以把它接到真正的 MCP server runtime，或者作为你自己的 tool registry 使用。
+外部工具统一命名为 `serverId::toolName`，只有进入 Skill Manifest 的
+`allowedTools` 后才可由 Agent 调用。外部 Server 通过 `MCP_EXTERNAL_SERVERS` 配置，
+命令和 URL 不接受客户端请求动态覆盖。
+
+```json
+[
+  {"id":"files","transport":"stdio","command":"node","args":["./mcp-files.js"]},
+  {"id":"search","transport":"streamable-http","url":"https://mcp.example.com/mcp","headers":{"Authorization":"Bearer token"}}
+]
+```
 
 
 ## Qdrant 接入说明
@@ -152,13 +212,20 @@ QDRANT_API_KEY=your_key
 
 说明：
 - 当前实现会自动创建 collection
-- 会按 `namespace` 写入不同简历的 chunk
+- 每次重建生成独立 `KnowledgeBaseVersion` 和 namespace
 - 检索时会按 namespace 过滤，避免不同简历互相污染
+- 新版本激活后旧版本进入 `retired`，删除简历时同步删除全部向量
+- `POST /api/knowledge-bases/cleanup` 默认 dry-run；传入 `{"dryRun":false,"retentionDays":7}` 执行清理
+- `GET /api/resumes/:id/knowledge-base-versions` 查看版本链
 
-下一步建议：
-1. 启动本地 Qdrant
-2. 把 `/api/health` 和 `/api/agent-run` 跑通
-3. 再把历史运行与用户数据切到 SQLite + Prisma
+## RAG 评测与编排对照实验
+
+- Golden Dataset：`datasets/rag-golden.v1.json`
+- `npm run test:rag`：真实 BGE embedding 回归，指标低于数据集阈值时退出码为 1
+- `POST /api/rag-eval/golden`：返回版本、逐例结果和聚合指标
+- `npm run experiment:orchestration -- 50`：在同一工作负载下比较原生流程、
+  LangChain RunnableSequence 和 LangGraph StateGraph 的延迟与输出一致性
+- `POST /api/experiments/orchestration`：可传 `iterations` 和自定义 `input`
 
 
 ## SQLite + Prisma 接入准备

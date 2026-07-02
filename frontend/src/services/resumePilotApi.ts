@@ -8,6 +8,7 @@ import type {
   LlmReadiness,
   QdrantReadiness,
   Resume,
+  ResumeVersion,
   Run,
   Session
 } from '../types/domain';
@@ -18,6 +19,8 @@ export const resumePilotApi = {
   getResume: async (id: string) => (await getJson<{ resume: Resume }>(`/api/resumes/${id}`)).resume || null,
   renameResume: (id: string, title: string) => sendJson<{ resume: Resume }>(`/api/resumes/${id}`, 'PATCH', { title }),
   deleteResume: (id: string) => sendJson<{ ok: boolean }>(`/api/resumes/${id}`, 'DELETE'),
+  listResumeVersions: async (resumeId: string) =>
+    (await getJson<{ versions: ResumeVersion[] }>(`/api/resumes/${resumeId}/versions`)).versions || [],
   listRuns: async () => (await getJson<{ runs: Run[] }>('/api/runs')).runs || [],
   getRun: async (id: string) => (await getJson<{ run: Run }>(`/api/runs/${id}`)).run || null,
   listSessions: async () => (await getJson<{ sessions: Session[] }>('/api/sessions')).sessions || [],
@@ -36,7 +39,7 @@ export const resumePilotApi = {
     notes?: string;
   }) => (await sendJson<{ application: Application }>('/api/applications', 'POST', input)).application,
   updateApplication: async (id: string, patch: Partial<Pick<Application,
-    'resumeVersionId' | 'sessionIds' | 'status' | 'appliedAt' | 'interviewAt' | 'nextAction' | 'result' | 'notes'
+    'resumeVersionId' | 'sessionIds' | 'status' | 'appliedAt' | 'interviewAt' | 'reminderAt' | 'reminderDone' | 'nextAction' | 'result' | 'notes'
   >>) => (await sendJson<{ application: Application }>(`/api/applications/${id}`, 'PATCH', patch)).application,
   deleteApplication: (id: string) => sendJson<{ ok: boolean }>(`/api/applications/${id}`, 'DELETE'),
   dashboard: () => getJson<Dashboard>('/api/dashboard'),

@@ -1,0 +1,12 @@
+{
+  "id": "resume-rewrite",
+  "name": "Resume Rewrite",
+  "version": "1.0.0",
+  "description": "在不增加虚假事实的前提下优化和改写简历。",
+  "triggers": ["改写简历", "优化简历", "润色简历", "精简简历", "简历措辞", "rewrite resume", "improve resume"],
+  "inputSchema": { "type": "object", "required": ["goal"], "properties": { "goal": { "type": "string" }, "text": { "type": "string" } } },
+  "outputSchema": { "type": "object", "required": ["rewrite"], "properties": { "rewrite": { "type": "object" } } },
+  "allowedTools": ["parse_resume", "search_resume_chunks", "rewrite_resume"],
+  "routing": { "minConfidence": 0.45 },
+  "runtime": { "timeoutMs": 120000, "maxToolCalls": 8, "maxSameToolCalls": 3 }
+}

@@ -57,6 +57,29 @@ test('json resume update renames and delete removes the record', async () => {
   assert.equal(await db.deleteResume('does-not-exist'), false);
 });
 
+test('knowledge base versions activate one version and retire the previous version', async () => {
+  const resume = await db.saveResumeRecord({ text: 'KB version test', sections: [], risks: [], kbSize: 0 });
+  const first = await db.createKnowledgeBaseVersion({
+    resumeId: resume.id,
+    versionNumber: 1,
+    contentHash: 'hash-1',
+    namespace: `${resume.id}:v1`,
+    vectorProvider: 'memory'
+  });
+  await db.activateKnowledgeBaseVersion(first.id);
+  const second = await db.createKnowledgeBaseVersion({
+    resumeId: resume.id,
+    versionNumber: 2,
+    contentHash: 'hash-2',
+    namespace: `${resume.id}:v2`,
+    vectorProvider: 'memory'
+  });
+  await db.activateKnowledgeBaseVersion(second.id);
+  const versions = await db.listKnowledgeBaseVersions({ resumeId: resume.id });
+  assert.equal(versions.find((item) => item.id === first.id).status, 'retired');
+  assert.equal(versions.find((item) => item.id === second.id).status, 'active');
+});
+
 test('json database stores resume correction events and updates parsed sections', async () => {
   const resume = await db.saveResumeRecord({
     text: '旧文本',
@@ -109,15 +132,23 @@ test('json application links job, resume version, and interview session', async 
     resumeVersionId: version.id,
     sessionIds: [session.id],
     status: 'preparing',
-    nextAction: '完善项目证据'
+    nextAction: '完善项目证据',
+    reminderAt: '2026-07-02T09:00:00.000Z'
   });
 
   assert.equal(application.job.id, job.id);
   assert.equal(application.resumeVersion.id, version.id);
   assert.equal(application.sessions[0].id, session.id);
 
-  const updated = await db.updateApplication(application.id, { status: 'applied', appliedAt: '2026-07-01T00:00:00.000Z' });
+  const updated = await db.updateApplication(application.id, {
+    status: 'applied',
+    appliedAt: '2026-07-01T00:00:00.000Z',
+    reminderDone: true,
+    notes: '已发送申请'
+  });
   assert.equal(updated.status, 'applied');
+  assert.equal(updated.reminderDone, true);
+  assert.equal(updated.notes, '已发送申请');
   assert.equal((await db.listApplications())[0].nextAction, '完善项目证据');
   assert.equal(await db.deleteApplication(application.id), true);
   assert.equal(await db.getApplication(application.id), null);

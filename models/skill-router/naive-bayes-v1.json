@@ -1,0 +1,2273 @@
+{
+  "id": "resumepilot-skill-router-naive-bayes",
+  "version": "1.0.0",
+  "createdAt": "2026-07-02T08:21:34.151Z",
+  "dataset": {
+    "id": "resumepilot-skill-router",
+    "version": "1.0.0",
+    "sha256": "ce9b8c445d82003e7e8af3a291c9fecc3ba4b17787175095fcb2a8ff2a91172c"
+  },
+  "thresholds": {
+    "minConfidence": 0.35,
+    "minMargin": 0.1
+  },
+  "validationMetrics": {
+    "total": 15,
+    "accuracy": 0.8,
+    "macroF1": 0.793,
+    "unknownRecall": 1,
+    "coverage": 0.6,
+    "confusion": {
+      "interview-training": {
+        "interview-training": 1,
+        "resume-analysis": 0,
+        "resume-rewrite": 0,
+        "resume-generation-skill": 0,
+        "unknown": 2
+      },
+      "resume-analysis": {
+        "interview-training": 0,
+        "resume-analysis": 3,
+        "resume-rewrite": 0,
+        "resume-generation-skill": 0,
+        "unknown": 0
+      },
+      "resume-rewrite": {
+        "interview-training": 0,
+        "resume-analysis": 0,
+        "resume-rewrite": 3,
+        "resume-generation-skill": 0,
+        "unknown": 0
+      },
+      "resume-generation-skill": {
+        "interview-training": 0,
+        "resume-analysis": 0,
+        "resume-rewrite": 0,
+        "resume-generation-skill": 2,
+        "unknown": 1
+      },
+      "unknown": {
+        "interview-training": 0,
+        "resume-analysis": 0,
+        "resume-rewrite": 0,
+        "resume-generation-skill": 0,
+        "unknown": 3
+      }
+    },
+    "perLabel": [
+      {
+        "label": "interview-training",
+        "precision": 1,
+        "recall": 0.333,
+        "f1": 0.5,
+        "support": 3
+      },
+      {
+        "label": "resume-analysis",
+        "precision": 1,
+        "recall": 1,
+        "f1": 1,
+        "support": 3
+      },
+      {
+        "label": "resume-rewrite",
+        "precision": 1,
+        "recall": 1,
+        "f1": 1,
+        "support": 3
+      },
+      {
+        "label": "resume-generation-skill",
+        "precision": 1,
+        "recall": 0.667,
+        "f1": 0.8,
+        "support": 3
+      },
+      {
+        "label": "unknown",
+        "precision": 0.5,
+        "recall": 1,
+        "f1": 0.667,
+        "support": 3
+      }
+    ],
+    "predictions": [
+      {
+        "text": "针对我的微服务经历模拟一轮技术面",
+        "actualLabel": "interview-training",
+        "label": "interview-training",
+        "confidence": 0.6733838509640181,
+        "margin": 0.5301687928009454,
+        "probabilities": [
+          {
+            "label": "interview-training",
+            "probability": 0.6733838509640181
+          },
+          {
+            "label": "resume-analysis",
+            "probability": 0.1432150581630727
+          },
+          {
+            "label": "resume-rewrite",
+            "probability": 0.10326668171773483
+          },
+          {
+            "label": "unknown",
+            "probability": 0.04962060591166553
+          },
+          {
+            "label": "resume-generation-skill",
+            "probability": 0.030513803243508653
+          }
+        ],
+        "predictedLabel": "interview-training",
+        "rejected": false,
+        "rejectionReason": null
+      },
+      {
+        "text": "评价这个回答是否符合 STAR",
+        "actualLabel": "interview-training",
+        "label": "unknown",
+        "confidence": 0.2977563873741106,
+        "margin": 0.023470176186500658,
+        "probabilities": [
+          {
+            "label": "interview-training",
+            "probability": 0.2977563873741106
+          },
+          {
+            "label": "unknown",
+            "probability": 0.27428621118760993
+          },
+          {
+            "label": "resume-generation-skill",
+            "probability": 0.2041353054483092
+          },
+          {
+            "label": "resume-rewrite",
+            "probability": 0.11337387502131845
+          },
+          {
+            "label": "resume-analysis",
+            "probability": 0.11044822096865174
+          }
+        ],
+        "predictedLabel": "interview-training",
+        "rejected": true,
+        "rejectionReason": "confidence_below_threshold"
+      },
+      {
+        "text": "continue interviewing me based on that answer",
+        "actualLabel": "interview-training",
+        "label": "unknown",
+        "confidence": 0.36270767220351596,
+        "margin": 0.012713082632837491,
+        "probabilities": [
+          {
+            "label": "unknown",
+            "probability": 0.36270767220351596
+          },
+          {
+            "label": "interview-training",
+            "probability": 0.34999458957067847
+          },
+          {
+            "label": "resume-rewrite",
+            "probability": 0.09994808979429616
+          },
+          {
+            "label": "resume-analysis",
+            "probability": 0.09736889300925204
+          },
+          {
+            "label": "resume-generation-skill",
+            "probability": 0.08998075542225732
+          }
+        ],
+        "predictedLabel": "unknown",
+        "rejected": true,
+        "rejectionReason": "model_predicted_unknown"
+      },
+      {
+        "text": "找出简历中可能被面试官质疑的地方",
+        "actualLabel": "resume-analysis",
+        "label": "resume-analysis",
+        "confidence": 0.9980271124406643,
+        "margin": 0.9969281613499457,
+        "probabilities": [
+          {
+            "label": "resume-analysis",
+            "probability": 0.9980271124406643
+          },
+          {
+            "label": "interview-training",
+            "probability": 0.0010989510907186484
+          },
+          {
+            "label": "resume-rewrite",
+            "probability": 0.0004404257915842141
+          },
+          {
+            "label": "resume-generation-skill",
+            "probability": 0.000412287171284034
+          },
+          {
+            "label": "unknown",
+            "probability": 0.000021223505748987655
+          }
+        ],
+        "predictedLabel": "resume-analysis",
+        "rejected": false,
+        "rejectionReason": null
+      },
+      {
+        "text": "检查这份 CV 的内容结构",
+        "actualLabel": "resume-analysis",
+        "label": "resume-analysis",
+        "confidence": 0.6911206820938577,
+        "margin": 0.5659228541036485,
+        "probabilities": [
+          {
+            "label": "resume-analysis",
+            "probability": 0.6911206820938577
+          },
+          {
+            "label": "resume-generation-skill",
+            "probability": 0.12519782799020923
+          },
+          {
+            "label": "resume-rewrite",
+            "probability": 0.12136994937816814
+          },
+          {
+            "label": "unknown",
+            "probability": 0.03271505030223575
+          },
+          {
+            "label": "interview-training",
+            "probability": 0.029596490235529172
+          }
+        ],
+        "predictedLabel": "resume-analysis",
+        "rejected": false,
+        "rejectionReason": null
+      },
+      {
+        "text": "what are the weak points in my resume",
+        "actualLabel": "resume-analysis",
+        "label": "resume-analysis",
+        "confidence": 0.8199644441395112,
+        "margin": 0.7034951564539615,
+        "probabilities": [
+          {
+            "label": "resume-analysis",
+            "probability": 0.8199644441395112
+          },
+          {
+            "label": "resume-generation-skill",
+            "probability": 0.1164692876855496
+          },
+          {
+            "label": "resume-rewrite",
+            "probability": 0.03284687470053269
+          },
+          {
+            "label": "interview-training",
+            "probability": 0.026773585887115026
+          },
+          {
+            "label": "unknown",
+            "probability": 0.003945807587291417
+          }
+        ],
+        "predictedLabel": "resume-analysis",
+        "rejected": false,
+        "rejectionReason": null
+      },
+      {
+        "text": "将这条项目描述写得更专业一些",
+        "actualLabel": "resume-rewrite",
+        "label": "resume-rewrite",
+        "confidence": 0.8879773641134217,
+        "margin": 0.7784070008126969,
+        "probabilities": [
+          {
+            "label": "resume-rewrite",
+            "probability": 0.8879773641134217
+          },
+          {
+            "label": "resume-analysis",
+            "probability": 0.10957036330072473
+          },
+          {
+            "label": "interview-training",
+            "probability": 0.001559970131403943
+          },
+          {
+            "label": "resume-generation-skill",
+            "probability": 0.0005980486377083272
+          },
+          {
+            "label": "unknown",
+            "probability": 0.00029425381674129684
+          }
+        ],
+        "predictedLabel": "resume-rewrite",
+        "rejected": false,
+        "rejectionReason": null
+      },
+      {
+        "text": "减少夸大的表达并保留原始事实",
+        "actualLabel": "resume-rewrite",
+        "label": "resume-rewrite",
+        "confidence": 0.7580654012172862,
+        "margin": 0.6616090535337676,
+        "probabilities": [
+          {
+            "label": "resume-rewrite",
+            "probability": 0.7580654012172862
+          },
+          {
+            "label": "unknown",
+            "probability": 0.09645634768351848
+          },
+          {
+            "label": "resume-generation-skill",
+            "probability": 0.05231516026960476
+          },
+          {
+            "label": "interview-training",
+            "probability": 0.04878168770581023
+          },
+          {
+            "label": "resume-analysis",
+            "probability": 0.04438140312378036
+          }
+        ],
+        "predictedLabel": "resume-rewrite",
+        "rejected": false,
+        "rejectionReason": null
+      },
+      {
+        "text": "polish my resume experience section",
+        "actualLabel": "resume-rewrite",
+        "label": "resume-rewrite",
+        "confidence": 0.5256561065092964,
+        "margin": 0.30799850007134266,
+        "probabilities": [
+          {
+            "label": "resume-rewrite",
+            "probability": 0.5256561065092964
+          },
+          {
+            "label": "resume-generation-skill",
+            "probability": 0.2176576064379537
+          },
+          {
+            "label": "resume-analysis",
+            "probability": 0.13848686391044593
+          },
+          {
+            "label": "interview-training",
+            "probability": 0.10147828401301272
+          },
+          {
+            "label": "unknown",
+            "probability": 0.01672113912929131
+          }
+        ],
+        "predictedLabel": "resume-rewrite",
+        "rejected": false,
+        "rejectionReason": null
+      },
+      {
+        "text": "基于候选人资料创建最终投递版本",
+        "actualLabel": "resume-generation-skill",
+        "label": "resume-generation-skill",
+        "confidence": 0.8547954946886711,
+        "margin": 0.8055444440556611,
+        "probabilities": [
+          {
+            "label": "resume-generation-skill",
+            "probability": 0.8547954946886711
+          },
+          {
+            "label": "unknown",
+            "probability": 0.04925105063301004
+          },
+          {
+            "label": "resume-rewrite",
+            "probability": 0.048383956000732815
+          },
+          {
+            "label": "interview-training",
+            "probability": 0.024908152017589655
+          },
+          {
+            "label": "resume-analysis",
+            "probability": 0.022661346659996393
+          }
+        ],
+        "predictedLabel": "resume-generation-skill",
+        "rejected": false,
+        "rejectionReason": null
+      },
+      {
+        "text": "输出可以下载的简历文件",
+        "actualLabel": "resume-generation-skill",
+        "label": "resume-generation-skill",
+        "confidence": 0.9255235054498743,
+        "margin": 0.8853022113520921,
+        "probabilities": [
+          {
+            "label": "resume-generation-skill",
+            "probability": 0.9255235054498743
+          },
+          {
+            "label": "resume-analysis",
+            "probability": 0.04022129409778215
+          },
+          {
+            "label": "resume-rewrite",
+            "probability": 0.031073544937634433
+          },
+          {
+            "label": "interview-training",
+            "probability": 0.001688542632624531
+          },
+          {
+            "label": "unknown",
+            "probability": 0.00149311288208458
+          }
+        ],
+        "predictedLabel": "resume-generation-skill",
+        "rejected": false,
+        "rejectionReason": null
+      },
+      {
+        "text": "build a complete resume from my profile",
+        "actualLabel": "resume-generation-skill",
+        "label": "unknown",
+        "confidence": 0.36098852659894737,
+        "margin": 0.09941348981869053,
+        "probabilities": [
+          {
+            "label": "resume-analysis",
+            "probability": 0.36098852659894737
+          },
+          {
+            "label": "resume-generation-skill",
+            "probability": 0.26157503678025684
+          },
+          {
+            "label": "interview-training",
+            "probability": 0.24734304568064794
+          },
+          {
+            "label": "resume-rewrite",
+            "probability": 0.08452582466818073
+          },
+          {
+            "label": "unknown",
+            "probability": 0.045567566271966994
+          }
+        ],
+        "predictedLabel": "resume-analysis",
+        "rejected": true,
+        "rejectionReason": "margin_below_threshold"
+      },
+      {
+        "text": "比较两个岗位哪个更适合我",
+        "actualLabel": "unknown",
+        "label": "unknown",
+        "confidence": 0.9079779150458306,
+        "margin": 0.8381836759889713,
+        "probabilities": [
+          {
+            "label": "unknown",
+            "probability": 0.9079779150458306
+          },
+          {
+            "label": "resume-generation-skill",
+            "probability": 0.06979423905685932
+          },
+          {
+            "label": "interview-training",
+            "probability": 0.008022037787591425
+          },
+          {
+            "label": "resume-rewrite",
+            "probability": 0.007381310571254943
+          },
+          {
+            "label": "resume-analysis",
+            "probability": 0.006824497538463641
+          }
+        ],
+        "predictedLabel": "unknown",
+        "rejected": true,
+        "rejectionReason": "model_predicted_unknown"
+      },
+      {
+        "text": "删除这条求职申请记录",
+        "actualLabel": "unknown",
+        "label": "unknown",
+        "confidence": 0.4119877457720218,
+        "margin": 0.25121551949602844,
+        "probabilities": [
+          {
+            "label": "unknown",
+            "probability": 0.4119877457720218
+          },
+          {
+            "label": "resume-rewrite",
+            "probability": 0.16077222627599336
+          },
+          {
+            "label": "resume-analysis",
+            "probability": 0.158684275285396
+          },
+          {
+            "label": "resume-generation-skill",
+            "probability": 0.1352168824614993
+          },
+          {
+            "label": "interview-training",
+            "probability": 0.13333887020508958
+          }
+        ],
+        "predictedLabel": "unknown",
+        "rejected": true,
+        "rejectionReason": "model_predicted_unknown"
+      },
+      {
+        "text": "介绍一下 LoRA 的训练原理",
+        "actualLabel": "unknown",
+        "label": "unknown",
+        "confidence": 0.7035917882096502,
+        "margin": 0.6009106177206532,
+        "probabilities": [
+          {
+            "label": "unknown",
+            "probability": 0.7035917882096502
+          },
+          {
+            "label": "resume-rewrite",
+            "probability": 0.1026811704889969
+          },
+          {
+            "label": "interview-training",
+            "probability": 0.09488525906604331
+          },
+          {
+            "label": "resume-generation-skill",
+            "probability": 0.04947561429500983
+          },
+          {
+            "label": "resume-analysis",
+            "probability": 0.04936616794029988
+          }
+        ],
+        "predictedLabel": "unknown",
+        "rejected": true,
+        "rejectionReason": "model_predicted_unknown"
+      }
+    ]
+  },
+  "testMetrics": {
+    "total": 20,
+    "accuracy": 0.8,
+    "macroF1": 0.799,
+    "unknownRecall": 1,
+    "coverage": 0.65,
+    "confusion": {
+      "interview-training": {
+        "interview-training": 3,
+        "resume-analysis": 0,
+        "resume-rewrite": 0,
+        "resume-generation-skill": 0,
+        "unknown": 1
+      },
+      "resume-analysis": {
+        "interview-training": 0,
+        "resume-analysis": 4,
+        "resume-rewrite": 0,
+        "resume-generation-skill": 0,
+        "unknown": 0
+      },
+      "resume-rewrite": {
+        "interview-training": 0,
+        "resume-analysis": 0,
+        "resume-rewrite": 2,
+        "resume-generation-skill": 0,
+        "unknown": 2
+      },
+      "resume-generation-skill": {
+        "interview-training": 0,
+        "resume-analysis": 1,
+        "resume-rewrite": 0,
+        "resume-generation-skill": 3,
+        "unknown": 0
+      },
+      "unknown": {
+        "interview-training": 0,
+        "resume-analysis": 0,
+        "resume-rewrite": 0,
+        "resume-generation-skill": 0,
+        "unknown": 4
+      }
+    },
+    "perLabel": [
+      {
+        "label": "interview-training",
+        "precision": 1,
+        "recall": 0.75,
+        "f1": 0.857,
+        "support": 4
+      },
+      {
+        "label": "resume-analysis",
+        "precision": 0.8,
+        "recall": 1,
+        "f1": 0.889,
+        "support": 4
+      },
+      {
+        "label": "resume-rewrite",
+        "precision": 1,
+        "recall": 0.5,
+        "f1": 0.667,
+        "support": 4
+      },
+      {
+        "label": "resume-generation-skill",
+        "precision": 1,
+        "recall": 0.75,
+        "f1": 0.857,
+        "support": 4
+      },
+      {
+        "label": "unknown",
+        "precision": 0.571,
+        "recall": 1,
+        "f1": 0.727,
+        "support": 4
+      }
+    ],
+    "predictions": [
+      {
+        "text": "从系统设计角度追问我的项目",
+        "actualLabel": "interview-training",
+        "label": "interview-training",
+        "confidence": 0.9722473934209386,
+        "margin": 0.9571811468508654,
+        "probabilities": [
+          {
+            "label": "interview-training",
+            "probability": 0.9722473934209386
+          },
+          {
+            "label": "resume-analysis",
+            "probability": 0.015066246570073171
+          },
+          {
+            "label": "resume-rewrite",
+            "probability": 0.0062726838843744385
+          },
+          {
+            "label": "unknown",
+            "probability": 0.0035820315199125556
+          },
+          {
+            "label": "resume-generation-skill",
+            "probability": 0.0028316446047010556
+          }
+        ],
+        "predictedLabel": "interview-training",
+        "rejected": false,
+        "rejectionReason": null
+      },
+      {
+        "text": "对我的回答打分并给出改进意见",
+        "actualLabel": "interview-training",
+        "label": "interview-training",
+        "confidence": 0.45593440426480925,
+        "margin": 0.24593635619817011,
+        "probabilities": [
+          {
+            "label": "interview-training",
+            "probability": 0.45593440426480925
+          },
+          {
+            "label": "unknown",
+            "probability": 0.20999804806663913
+          },
+          {
+            "label": "resume-analysis",
+            "probability": 0.16912195998059257
+          },
+          {
+            "label": "resume-rewrite",
+            "probability": 0.08680090899627198
+          },
+          {
+            "label": "resume-generation-skill",
+            "probability": 0.07814467869168709
+          }
+        ],
+        "predictedLabel": "interview-training",
+        "rejected": false,
+        "rejectionReason": null
+      },
+      {
+        "text": "进行一轮前端岗位的行为面试",
+        "actualLabel": "interview-training",
+        "label": "unknown",
+        "confidence": 0.5170147932787634,
+        "margin": 0.1493023993474158,
+        "probabilities": [
+          {
+            "label": "unknown",
+            "probability": 0.5170147932787634
+          },
+          {
+            "label": "interview-training",
+            "probability": 0.36771239393134764
+          },
+          {
+            "label": "resume-generation-skill",
+            "probability": 0.09011867307041019
+          },
+          {
+            "label": "resume-analysis",
+            "probability": 0.01625037968016468
+          },
+          {
+            "label": "resume-rewrite",
+            "probability": 0.008903760039314
+          }
+        ],
+        "predictedLabel": "unknown",
+        "rejected": true,
+        "rejectionReason": "model_predicted_unknown"
+      },
+      {
+        "text": "interview me about the architecture choices",
+        "actualLabel": "interview-training",
+        "label": "interview-training",
+        "confidence": 0.5134018269358411,
+        "margin": 0.3468924903010799,
+        "probabilities": [
+          {
+            "label": "interview-training",
+            "probability": 0.5134018269358411
+          },
+          {
+            "label": "resume-analysis",
+            "probability": 0.16650933663476125
+          },
+          {
+            "label": "unknown",
+            "probability": 0.14187464847861436
+          },
+          {
+            "label": "resume-generation-skill",
+            "probability": 0.09049045048227179
+          },
+          {
+            "label": "resume-rewrite",
+            "probability": 0.08772373746851166
+          }
+        ],
+        "predictedLabel": "interview-training",
+        "rejected": false,
+        "rejectionReason": null
+      },
+      {
+        "text": "这份简历的证据链是否完整",
+        "actualLabel": "resume-analysis",
+        "label": "resume-analysis",
+        "confidence": 0.5037759716608093,
+        "margin": 0.10945548249400888,
+        "probabilities": [
+          {
+            "label": "resume-analysis",
+            "probability": 0.5037759716608093
+          },
+          {
+            "label": "resume-rewrite",
+            "probability": 0.39432048916680046
+          },
+          {
+            "label": "resume-generation-skill",
+            "probability": 0.08730492568552876
+          },
+          {
+            "label": "unknown",
+            "probability": 0.008944146441186669
+          },
+          {
+            "label": "interview-training",
+            "probability": 0.005654467045674762
+          }
+        ],
+        "predictedLabel": "resume-analysis",
+        "rejected": false,
+        "rejectionReason": null
+      },
+      {
+        "text": "扫描可能引发深挖的问题点",
+        "actualLabel": "resume-analysis",
+        "label": "resume-analysis",
+        "confidence": 0.987887811165027,
+        "margin": 0.9804901385700934,
+        "probabilities": [
+          {
+            "label": "resume-analysis",
+            "probability": 0.987887811165027
+          },
+          {
+            "label": "interview-training",
+            "probability": 0.007397672594933614
+          },
+          {
+            "label": "resume-generation-skill",
+            "probability": 0.002097502294321275
+          },
+          {
+            "label": "resume-rewrite",
+            "probability": 0.001446906950990291
+          },
+          {
+            "label": "unknown",
+            "probability": 0.0011701069947280525
+          }
+        ],
+        "predictedLabel": "resume-analysis",
+        "rejected": false,
+        "rejectionReason": null
+      },
+      {
+        "text": "将简历拆成教育技能工作项目几个部分",
+        "actualLabel": "resume-analysis",
+        "label": "resume-analysis",
+        "confidence": 0.7149159652857497,
+        "margin": 0.5104863119323533,
+        "probabilities": [
+          {
+            "label": "resume-analysis",
+            "probability": 0.7149159652857497
+          },
+          {
+            "label": "resume-rewrite",
+            "probability": 0.20442965335339647
+          },
+          {
+            "label": "resume-generation-skill",
+            "probability": 0.052669784908151475
+          },
+          {
+            "label": "interview-training",
+            "probability": 0.021048154402887008
+          },
+          {
+            "label": "unknown",
+            "probability": 0.006936442049815284
+          }
+        ],
+        "predictedLabel": "resume-analysis",
+        "rejected": false,
+        "rejectionReason": null
+      },
+      {
+        "text": "assess whether this CV is interview ready",
+        "actualLabel": "resume-analysis",
+        "label": "resume-analysis",
+        "confidence": 0.535219145892237,
+        "margin": 0.3496773377359671,
+        "probabilities": [
+          {
+            "label": "resume-analysis",
+            "probability": 0.535219145892237
+          },
+          {
+            "label": "resume-rewrite",
+            "probability": 0.18554180815626983
+          },
+          {
+            "label": "interview-training",
+            "probability": 0.12859112179951523
+          },
+          {
+            "label": "unknown",
+            "probability": 0.1059474455139688
+          },
+          {
+            "label": "resume-generation-skill",
+            "probability": 0.044700478638009154
+          }
+        ],
+        "predictedLabel": "resume-analysis",
+        "rejected": false,
+        "rejectionReason": null
+      },
+      {
+        "text": "重写这段工作经历让它更容易解释",
+        "actualLabel": "resume-rewrite",
+        "label": "resume-rewrite",
+        "confidence": 0.8993828794352839,
+        "margin": 0.8614104106541733,
+        "probabilities": [
+          {
+            "label": "resume-rewrite",
+            "probability": 0.8993828794352839
+          },
+          {
+            "label": "resume-analysis",
+            "probability": 0.03797246878111062
+          },
+          {
+            "label": "unknown",
+            "probability": 0.036112134347518976
+          },
+          {
+            "label": "interview-training",
+            "probability": 0.01701680641931223
+          },
+          {
+            "label": "resume-generation-skill",
+            "probability": 0.009515711016774108
+          }
+        ],
+        "predictedLabel": "resume-rewrite",
+        "rejected": false,
+        "rejectionReason": null
+      },
+      {
+        "text": "去掉空话并精简这些 bullet",
+        "actualLabel": "resume-rewrite",
+        "label": "unknown",
+        "confidence": 0.3367739239272956,
+        "margin": 0.12102345979641049,
+        "probabilities": [
+          {
+            "label": "resume-rewrite",
+            "probability": 0.3367739239272956
+          },
+          {
+            "label": "unknown",
+            "probability": 0.2157504641308851
+          },
+          {
+            "label": "resume-analysis",
+            "probability": 0.16620011830178233
+          },
+          {
+            "label": "resume-generation-skill",
+            "probability": 0.1416212275670116
+          },
+          {
+            "label": "interview-training",
+            "probability": 0.13965426607302533
+          }
+        ],
+        "predictedLabel": "resume-rewrite",
+        "rejected": true,
+        "rejectionReason": "confidence_below_threshold"
+      },
+      {
+        "text": "保持事实不变调整简历文案",
+        "actualLabel": "resume-rewrite",
+        "label": "resume-rewrite",
+        "confidence": 0.9957761843178672,
+        "margin": 0.992078186843918,
+        "probabilities": [
+          {
+            "label": "resume-rewrite",
+            "probability": 0.9957761843178672
+          },
+          {
+            "label": "resume-generation-skill",
+            "probability": 0.0036979974739491965
+          },
+          {
+            "label": "resume-analysis",
+            "probability": 0.0003779102740425631
+          },
+          {
+            "label": "interview-training",
+            "probability": 0.00010858516880924157
+          },
+          {
+            "label": "unknown",
+            "probability": 0.00003932276533168906
+          }
+        ],
+        "predictedLabel": "resume-rewrite",
+        "rejected": false,
+        "rejectionReason": null
+      },
+      {
+        "text": "make this resume statement defensible",
+        "actualLabel": "resume-rewrite",
+        "label": "unknown",
+        "confidence": 0.3377875830989526,
+        "margin": 0.09364961560999227,
+        "probabilities": [
+          {
+            "label": "resume-rewrite",
+            "probability": 0.3377875830989526
+          },
+          {
+            "label": "resume-generation-skill",
+            "probability": 0.24413796748896036
+          },
+          {
+            "label": "resume-analysis",
+            "probability": 0.24359790323773872
+          },
+          {
+            "label": "unknown",
+            "probability": 0.0964411522968714
+          },
+          {
+            "label": "interview-training",
+            "probability": 0.07803539387747677
+          }
+        ],
+        "predictedLabel": "resume-rewrite",
+        "rejected": true,
+        "rejectionReason": "confidence_below_threshold"
+      },
+      {
+        "text": "把当前确认过的内容制作成简历",
+        "actualLabel": "resume-generation-skill",
+        "label": "resume-generation-skill",
+        "confidence": 0.9297911956713248,
+        "margin": 0.8843335919214312,
+        "probabilities": [
+          {
+            "label": "resume-generation-skill",
+            "probability": 0.9297911956713248
+          },
+          {
+            "label": "resume-analysis",
+            "probability": 0.045457603749893556
+          },
+          {
+            "label": "resume-rewrite",
+            "probability": 0.017559466006308623
+          },
+          {
+            "label": "interview-training",
+            "probability": 0.003816739547068956
+          },
+          {
+            "label": "unknown",
+            "probability": 0.003374995025403976
+          }
+        ],
+        "predictedLabel": "resume-generation-skill",
+        "rejected": false,
+        "rejectionReason": null
+      },
+      {
+        "text": "生成一份单栏 ATS 版本",
+        "actualLabel": "resume-generation-skill",
+        "label": "resume-generation-skill",
+        "confidence": 0.9932302375789785,
+        "margin": 0.9905043616133429,
+        "probabilities": [
+          {
+            "label": "resume-generation-skill",
+            "probability": 0.9932302375789785
+          },
+          {
+            "label": "resume-rewrite",
+            "probability": 0.002725875965635707
+          },
+          {
+            "label": "interview-training",
+            "probability": 0.0015635379080455568
+          },
+          {
+            "label": "resume-analysis",
+            "probability": 0.0012437587942348814
+          },
+          {
+            "label": "unknown",
+            "probability": 0.0012365897531053064
+          }
+        ],
+        "predictedLabel": "resume-generation-skill",
+        "rejected": false,
+        "rejectionReason": null
+      },
+      {
+        "text": "导出最终的求职简历",
+        "actualLabel": "resume-generation-skill",
+        "label": "resume-generation-skill",
+        "confidence": 0.6616729265633697,
+        "margin": 0.4966206211007796,
+        "probabilities": [
+          {
+            "label": "resume-generation-skill",
+            "probability": 0.6616729265633697
+          },
+          {
+            "label": "resume-analysis",
+            "probability": 0.16505230546259014
+          },
+          {
+            "label": "resume-rewrite",
+            "probability": 0.12260973618107443
+          },
+          {
+            "label": "unknown",
+            "probability": 0.02800487603868908
+          },
+          {
+            "label": "interview-training",
+            "probability": 0.022660155754276566
+          }
+        ],
+        "predictedLabel": "resume-generation-skill",
+        "rejected": false,
+        "rejectionReason": null
+      },
+      {
+        "text": "produce the final downloadable CV",
+        "actualLabel": "resume-generation-skill",
+        "label": "resume-analysis",
+        "confidence": 0.36770126837883044,
+        "margin": 0.11276286148522269,
+        "probabilities": [
+          {
+            "label": "resume-analysis",
+            "probability": 0.36770126837883044
+          },
+          {
+            "label": "resume-rewrite",
+            "probability": 0.25493840689360775
+          },
+          {
+            "label": "resume-generation-skill",
+            "probability": 0.2456776491421871
+          },
+          {
+            "label": "unknown",
+            "probability": 0.0727870263909187
+          },
+          {
+            "label": "interview-training",
+            "probability": 0.058895649194455946
+          }
+        ],
+        "predictedLabel": "resume-analysis",
+        "rejected": false,
+        "rejectionReason": null
+      },
+      {
+        "text": "分析这个岗位要求与我的差距",
+        "actualLabel": "unknown",
+        "label": "unknown",
+        "confidence": 0.9983657470678113,
+        "margin": 0.9970129134768159,
+        "probabilities": [
+          {
+            "label": "unknown",
+            "probability": 0.9983657470678113
+          },
+          {
+            "label": "resume-generation-skill",
+            "probability": 0.0013528335909954755
+          },
+          {
+            "label": "resume-analysis",
+            "probability": 0.0001998789028921858
+          },
+          {
+            "label": "interview-training",
+            "probability": 0.00006573395101322401
+          },
+          {
+            "label": "resume-rewrite",
+            "probability": 0.000015806487287814724
+          }
+        ],
+        "predictedLabel": "unknown",
+        "rejected": true,
+        "rejectionReason": "model_predicted_unknown"
+      },
+      {
+        "text": "给我讲讲神经网络反向传播",
+        "actualLabel": "unknown",
+        "label": "unknown",
+        "confidence": 0.9986845647699623,
+        "margin": 0.9982751128411244,
+        "probabilities": [
+          {
+            "label": "unknown",
+            "probability": 0.9986845647699623
+          },
+          {
+            "label": "resume-generation-skill",
+            "probability": 0.00040945192883794706
+          },
+          {
+            "label": "resume-rewrite",
+            "probability": 0.00040197112531067594
+          },
+          {
+            "label": "interview-training",
+            "probability": 0.0003366393296668234
+          },
+          {
+            "label": "resume-analysis",
+            "probability": 0.00016737284622226196
+          }
+        ],
+        "predictedLabel": "unknown",
+        "rejected": true,
+        "rejectionReason": "model_predicted_unknown"
+      },
+      {
+        "text": "安排一次下周二的日历会议",
+        "actualLabel": "unknown",
+        "label": "unknown",
+        "confidence": 0.4119877457720218,
+        "margin": 0.25121551949602844,
+        "probabilities": [
+          {
+            "label": "unknown",
+            "probability": 0.4119877457720218
+          },
+          {
+            "label": "resume-rewrite",
+            "probability": 0.16077222627599336
+          },
+          {
+            "label": "resume-analysis",
+            "probability": 0.158684275285396
+          },
+          {
+            "label": "resume-generation-skill",
+            "probability": 0.1352168824614993
+          },
+          {
+            "label": "interview-training",
+            "probability": 0.13333887020508958
+          }
+        ],
+        "predictedLabel": "unknown",
+        "rejected": true,
+        "rejectionReason": "model_predicted_unknown"
+      },
+      {
+        "text": "搜索最新的前端工程师职位",
+        "actualLabel": "unknown",
+        "label": "unknown",
+        "confidence": 0.9987559755261101,
+        "margin": 0.9976337208942523,
+        "probabilities": [
+          {
+            "label": "unknown",
+            "probability": 0.9987559755261101
+          },
+          {
+            "label": "interview-training",
+            "probability": 0.0011222546318577287
+          },
+          {
+            "label": "resume-generation-skill",
+            "probability": 0.00008773195097591437
+          },
+          {
+            "label": "resume-rewrite",
+            "probability": 0.00001879227006713769
+          },
+          {
+            "label": "resume-analysis",
+            "probability": 0.00001524562098912598
+          }
+        ],
+        "predictedLabel": "unknown",
+        "rejected": true,
+        "rejectionReason": "model_predicted_unknown"
+      }
+    ]
+  },
+  "model": {
+    "type": "multinomial-naive-bayes",
+    "alpha": 1,
+    "labels": [
+      "interview-training",
+      "resume-analysis",
+      "resume-rewrite",
+      "resume-generation-skill",
+      "unknown"
+    ],
+    "vocabularySize": 852,
+    "documentCount": 64,
+    "documentCounts": {
+      "interview-training": 10,
+      "resume-analysis": 13,
+      "resume-rewrite": 13,
+      "resume-generation-skill": 10,
+      "unknown": 18
+    },
+    "totalTokens": {
+      "interview-training": 156,
+      "resume-analysis": 226,
+      "resume-rewrite": 212,
+      "resume-generation-skill": 142,
+      "unknown": 275
+    },
+    "tokenCounts": {
+      "interview-training": {
+        "c:根据": 2,
+        "c:据我": 1,
+        "c:我的": 1,
+        "c:的项": 1,
+        "c:项目": 2,
+        "c:目经": 1,
+        "c:经历": 1,
+        "c:历进": 1,
+        "c:进行": 1,
+        "c:行模": 1,
+        "c:模拟": 1,
+        "c:拟面": 1,
+        "c:面试": 5,
+        "c3:根据我": 1,
+        "c3:据我的": 1,
+        "c3:我的项": 1,
+        "c3:的项目": 1,
+        "c3:项目经": 1,
+        "c3:目经历": 1,
+        "c3:经历进": 1,
+        "c3:历进行": 1,
+        "c3:进行模": 1,
+        "c3:行模拟": 1,
+        "c3:模拟面": 1,
+        "c3:拟面试": 1,
+        "c:请像": 1,
+        "c:像面": 1,
+        "c:试官": 1,
+        "c:官一": 1,
+        "c:一样": 1,
+        "c:样连": 1,
+        "c:连续": 1,
+        "c:续追": 1,
+        "c:追问": 1,
+        "c:问我": 1,
+        "c3:请像面": 1,
+        "c3:像面试": 1,
+        "c3:面试官": 1,
+        "c3:试官一": 1,
+        "c3:官一样": 1,
+        "c3:一样连": 1,
+        "c3:样连续": 1,
+        "c3:连续追": 1,
+        "c3:续追问": 1,
+        "c3:追问我": 1,
+        "c:点评": 1,
+        "c:评一": 1,
+        "c:一下": 1,
+        "c:下我": 1,
+        "c:我刚": 1,
+        "c:刚才": 1,
+        "c:才的": 1,
+        "c:的面": 2,
+        "c:试回": 1,
+        "c:回答": 2,
+        "c3:点评一": 1,
+        "c3:评一下": 1,
+        "c3:一下我": 1,
+        "c3:下我刚": 1,
+        "c3:我刚才": 1,
+        "c3:刚才的": 1,
+        "c3:才的面": 1,
+        "c3:的面试": 2,
+        "c3:面试回": 1,
+        "c3:试回答": 1,
+        "w:redis": 1,
+        "c:围绕": 1,
+        "c:目问": 1,
+        "c:问几": 1,
+        "c:几道": 1,
+        "c:道技": 1,
+        "c:技术": 1,
+        "c:术问": 1,
+        "c:问题": 1,
+        "c3:项目问": 1,
+        "c3:目问几": 1,
+        "c3:问几道": 1,
+        "c3:几道技": 1,
+        "c3:道技术": 1,
+        "c3:技术问": 1,
+        "c3:术问题": 1,
+        "c:帮我": 1,
+        "c:我做": 1,
+        "c:做一": 1,
+        "c:一轮": 2,
+        "c:轮压": 1,
+        "c:压力": 1,
+        "c:力面": 1,
+        "c3:帮我做": 1,
+        "c3:我做一": 1,
+        "c3:做一轮": 1,
+        "c3:一轮压": 1,
+        "c3:轮压力": 1,
+        "c3:压力面": 1,
+        "c3:力面试": 1,
+        "c:练习": 1,
+        "c:习后": 1,
+        "c:后端": 1,
+        "c:端工": 1,
+        "c:工程": 1,
+        "c:程师": 1,
+        "c:师的": 1,
+        "c:试问": 1,
+        "c:问答": 1,
+        "c3:练习后": 1,
+        "c3:习后端": 1,
+        "c3:后端工": 1,
+        "c3:端工程": 1,
+        "c3:工程师": 1,
+        "c3:程师的": 1,
+        "c3:师的面": 1,
+        "c3:面试问": 1,
+        "c3:试问答": 1,
+        "c:据上": 1,
+        "c:上一": 1,
+        "c:轮回": 1,
+        "c:答继": 1,
+        "c:继续": 1,
+        "c:续深": 1,
+        "c:深挖": 1,
+        "c3:根据上": 1,
+        "c3:据上一": 1,
+        "c3:上一轮": 1,
+        "c3:一轮回": 1,
+        "c3:轮回答": 1,
+        "c3:回答继": 1,
+        "c3:答继续": 1,
+        "c3:继续深": 1,
+        "c3:续深挖": 1,
+        "w:mock": 1,
+        "w:me": 1,
+        "w:for": 1,
+        "w:a": 1,
+        "w:backend": 1,
+        "w:interview": 2,
+        "w:critique": 1,
+        "w:my": 2,
+        "w:answer": 1,
+        "w:ask": 1,
+        "w:follow": 1,
+        "w:up": 1,
+        "w:questions": 1,
+        "w:about": 1,
+        "w:resume": 1
+      },
+      "resume-analysis": {
+        "c:分析": 1,
+        "c:析这": 1,
+        "c:这份": 1,
+        "c:份简": 1,
+        "c:简历": 6,
+        "c:历有": 1,
+        "c:有哪": 1,
+        "c:哪些": 2,
+        "c:些问": 1,
+        "c:问题": 2,
+        "c3:分析这": 1,
+        "c3:析这份": 1,
+        "c3:这份简": 1,
+        "c3:份简历": 1,
+        "c3:简历有": 1,
+        "c3:历有哪": 1,
+        "c3:有哪些": 1,
+        "c3:哪些问": 1,
+        "c3:些问题": 1,
+        "c:帮我": 1,
+        "c:我识": 1,
+        "c:识别": 1,
+        "c:别简": 1,
+        "c:历里": 2,
+        "c:里的": 1,
+        "c:的风": 1,
+        "c:风险": 1,
+        "c:险技": 1,
+        "c:技术": 1,
+        "c:术词": 1,
+        "c3:帮我识": 1,
+        "c3:我识别": 1,
+        "c3:识别简": 1,
+        "c3:别简历": 1,
+        "c3:简历里": 2,
+        "c3:历里的": 1,
+        "c3:里的风": 1,
+        "c3:的风险": 1,
+        "c3:风险技": 1,
+        "c3:险技术": 1,
+        "c3:技术词": 1,
+        "c:把简": 1,
+        "c:历解": 1,
+        "c:解析": 1,
+        "c:析成": 1,
+        "c:成结": 1,
+        "c:结构": 1,
+        "c:构化": 1,
+        "c:化模": 1,
+        "c:模块": 1,
+        "c3:把简历": 1,
+        "c3:简历解": 1,
+        "c3:历解析": 1,
+        "c3:解析成": 1,
+        "c3:析成结": 1,
+        "c3:成结构": 1,
+        "c3:结构化": 1,
+        "c3:构化模": 1,
+        "c3:化模块": 1,
+        "c:评估": 1,
+        "c:估我": 1,
+        "c:我的": 1,
+        "c:的简": 1,
+        "c:历面": 1,
+        "c:面试": 1,
+        "c:试准": 1,
+        "c:准备": 1,
+        "c:备度": 1,
+        "c3:评估我": 1,
+        "c3:估我的": 1,
+        "c3:我的简": 1,
+        "c3:的简历": 1,
+        "c3:简历面": 1,
+        "c3:历面试": 1,
+        "c3:面试准": 1,
+        "c3:试准备": 1,
+        "c3:准备度": 1,
+        "c:看看": 1,
+        "c:看项": 1,
+        "c:项目": 3,
+        "c:目描": 2,
+        "c:描述": 2,
+        "c:述里": 1,
+        "c:里哪": 1,
+        "c:些内": 1,
+        "c:内容": 1,
+        "c:容难": 1,
+        "c:难以": 1,
+        "c:以自": 1,
+        "c:自证": 1,
+        "c3:看看项": 1,
+        "c3:看项目": 1,
+        "c3:项目描": 2,
+        "c3:目描述": 2,
+        "c3:描述里": 1,
+        "c3:述里哪": 1,
+        "c3:里哪些": 1,
+        "c3:哪些内": 1,
+        "c3:些内容": 1,
+        "c3:内容难": 1,
+        "c3:容难以": 1,
+        "c3:难以自": 1,
+        "c3:以自证": 1,
+        "c:提取": 1,
+        "c:取教": 1,
+        "c:教育": 1,
+        "c:育经": 1,
+        "c:经历": 2,
+        "c:历技": 1,
+        "c:技能": 1,
+        "c:能和": 1,
+        "c:和项": 1,
+        "c:目经": 1,
+        "c3:提取教": 1,
+        "c3:取教育": 1,
+        "c3:教育经": 1,
+        "c3:育经历": 1,
+        "c3:经历技": 1,
+        "c3:历技能": 1,
+        "c3:技能和": 1,
+        "c3:能和项": 1,
+        "c3:和项目": 1,
+        "c3:项目经": 1,
+        "c3:目经历": 1,
+        "c:诊断": 1,
+        "c:断简": 1,
+        "c:历为": 1,
+        "c:为什": 1,
+        "c:什么": 1,
+        "c:么缺": 1,
+        "c:缺少": 1,
+        "c:少说": 1,
+        "c:说服": 1,
+        "c:服力": 1,
+        "c3:诊断简": 1,
+        "c3:断简历": 1,
+        "c3:简历为": 1,
+        "c3:历为什": 1,
+        "c3:为什么": 1,
+        "c3:什么缺": 1,
+        "c3:么缺少": 1,
+        "c3:缺少说": 1,
+        "c3:少说服": 1,
+        "c3:说服力": 1,
+        "w:analyze": 1,
+        "w:the": 1,
+        "w:risks": 1,
+        "w:in": 2,
+        "w:my": 2,
+        "w:resume": 2,
+        "w:extract": 1,
+        "w:structured": 1,
+        "w:sections": 1,
+        "w:from": 1,
+        "w:this": 1,
+        "w:cv": 2,
+        "w:review": 1,
+        "w:readiness": 1,
+        "w:before": 1,
+        "w:interview": 1,
+        "c:找出": 1,
+        "c:出简": 1,
+        "c:里容": 1,
+        "c:容易": 1,
+        "c:易被": 1,
+        "c:被质": 1,
+        "c:质疑": 1,
+        "c:疑的": 1,
+        "c:的薄": 1,
+        "c:薄弱": 1,
+        "c:弱点": 1,
+        "c3:找出简": 1,
+        "c3:出简历": 1,
+        "c3:历里容": 1,
+        "c3:里容易": 1,
+        "c3:容易被": 1,
+        "c3:易被质": 1,
+        "c3:被质疑": 1,
+        "c3:质疑的": 1,
+        "c3:疑的薄": 1,
+        "c3:的薄弱": 1,
+        "c3:薄弱点": 1,
+        "c:扫描": 1,
+        "c:描项": 1,
+        "c:述中": 1,
+        "c:中可": 1,
+        "c:可能": 1,
+        "c:能被": 1,
+        "c:被深": 1,
+        "c:深挖": 1,
+        "c:挖的": 1,
+        "c:的问": 1,
+        "c3:扫描项": 1,
+        "c3:描项目": 1,
+        "c3:描述中": 1,
+        "c3:述中可": 1,
+        "c3:中可能": 1,
+        "c3:可能被": 1,
+        "c3:能被深": 1,
+        "c3:被深挖": 1,
+        "c3:深挖的": 1,
+        "c3:挖的问": 1,
+        "c3:的问题": 1,
+        "w:identify": 1,
+        "w:weak": 1,
+        "w:points": 1
+      },
+      "resume-rewrite": {
+        "c:帮我": 1,
+        "c:我润": 1,
+        "c:润色": 1,
+        "c:色一": 1,
+        "c:一下": 1,
+        "c:下这": 1,
+        "c:这份": 1,
+        "c:份简": 1,
+        "c:简历": 4,
+        "c3:帮我润": 1,
+        "c3:我润色": 1,
+        "c3:润色一": 1,
+        "c3:色一下": 1,
+        "c3:一下这": 1,
+        "c3:下这份": 1,
+        "c3:这份简": 1,
+        "c3:份简历": 1,
+        "c:把项": 2,
+        "c:项目": 2,
+        "c:目经": 1,
+        "c:经历": 3,
+        "c:历改": 2,
+        "c:改得": 1,
+        "c:得更": 1,
+        "c:更简": 1,
+        "c:简洁": 1,
+        "c3:把项目": 2,
+        "c3:项目经": 1,
+        "c3:目经历": 1,
+        "c3:经历改": 2,
+        "c3:历改得": 1,
+        "c3:改得更": 1,
+        "c3:得更简": 1,
+        "c3:更简洁": 1,
+        "c:优化": 1,
+        "c:化简": 1,
+        "c:历中": 1,
+        "c:中的": 1,
+        "c:的技": 1,
+        "c:技术": 1,
+        "c:术措": 1,
+        "c:措辞": 2,
+        "c3:优化简": 1,
+        "c3:化简历": 1,
+        "c3:简历中": 1,
+        "c3:历中的": 1,
+        "c3:中的技": 1,
+        "c3:的技术": 1,
+        "c3:技术措": 1,
+        "c3:术措辞": 1,
+        "c:将这": 1,
+        "c:这段": 1,
+        "c:段经": 1,
+        "c:改写": 1,
+        "c:写成": 1,
+        "c:成更": 2,
+        "c:更可": 1,
+        "c:可信": 1,
+        "c:信的": 1,
+        "c:的表": 1,
+        "c:表达": 1,
+        "c3:将这段": 1,
+        "c3:这段经": 1,
+        "c3:段经历": 1,
+        "c3:历改写": 1,
+        "c3:改写成": 1,
+        "c3:写成更": 1,
+        "c3:成更可": 1,
+        "c3:更可信": 1,
+        "c3:可信的": 1,
+        "c3:信的表": 1,
+        "c3:的表达": 1,
+        "c:给我": 1,
+        "c:我一": 1,
+        "c:一个": 1,
+        "c:个保": 1,
+        "c:保守": 1,
+        "c:守版": 1,
+        "c:版本": 1,
+        "c:本的": 1,
+        "c:的简": 1,
+        "c:历描": 1,
+        "c:描述": 2,
+        "c3:给我一": 1,
+        "c3:我一个": 1,
+        "c3:一个保": 1,
+        "c3:个保守": 1,
+        "c3:保守版": 1,
+        "c3:守版本": 1,
+        "c3:版本的": 1,
+        "c3:本的简": 1,
+        "c3:的简历": 1,
+        "c3:简历描": 1,
+        "c3:历描述": 1,
+        "w:bullet": 1,
+        "c:把工": 1,
+        "c:工作": 1,
+        "c:作经": 1,
+        "c:历压": 1,
+        "c:压缩": 1,
+        "c:缩成": 1,
+        "c:成三": 1,
+        "c:三条": 1,
+        "c3:把工作": 1,
+        "c3:工作经": 1,
+        "c3:作经历": 1,
+        "c3:经历压": 1,
+        "c3:历压缩": 1,
+        "c3:压缩成": 1,
+        "c3:缩成三": 1,
+        "c3:成三条": 1,
+        "c:修正": 1,
+        "c:正文": 1,
+        "c:文案": 2,
+        "c:案但": 1,
+        "c:但不": 1,
+        "c:不要": 1,
+        "c:要增": 1,
+        "c:增加": 1,
+        "c:加虚": 1,
+        "c:虚假": 1,
+        "c:假指": 1,
+        "c:指标": 1,
+        "c3:修正文": 1,
+        "c3:正文案": 1,
+        "c3:文案但": 1,
+        "c3:案但不": 1,
+        "c3:但不要": 1,
+        "c3:不要增": 1,
+        "c3:要增加": 1,
+        "c3:增加虚": 1,
+        "c3:加虚假": 1,
+        "c3:虚假指": 1,
+        "c3:假指标": 1,
+        "w:rewrite": 1,
+        "w:these": 1,
+        "w:resume": 1,
+        "w:bullets": 1,
+        "w:make": 1,
+        "w:my": 1,
+        "w:cv": 1,
+        "w:wording": 2,
+        "w:more": 1,
+        "w:concise": 1,
+        "w:improve": 1,
+        "w:this": 1,
+        "w:project": 1,
+        "w:description": 1,
+        "w:without": 1,
+        "w:inventing": 1,
+        "w:facts": 1,
+        "c:目描": 1,
+        "c:述调": 1,
+        "c:调整": 1,
+        "c:整成": 1,
+        "c:更专": 1,
+        "c:专业": 1,
+        "c:业的": 1,
+        "c:的文": 1,
+        "c3:项目描": 1,
+        "c3:目描述": 1,
+        "c3:描述调": 1,
+        "c3:述调整": 1,
+        "c3:调整成": 1,
+        "c3:整成更": 1,
+        "c3:成更专": 1,
+        "c3:更专业": 1,
+        "c3:专业的": 1,
+        "c3:业的文": 1,
+        "c3:的文案": 1,
+        "c:保持": 1,
+        "c:持事": 1,
+        "c:事实": 1,
+        "c:实不": 1,
+        "c:不变": 1,
+        "c:变重": 1,
+        "c:重新": 1,
+        "c:新组": 1,
+        "c:组织": 1,
+        "c:织简": 1,
+        "c:历措": 1,
+        "c3:保持事": 1,
+        "c3:持事实": 1,
+        "c3:事实不": 1,
+        "c3:实不变": 1,
+        "c3:不变重": 1,
+        "c3:变重新": 1,
+        "c3:重新组": 1,
+        "c3:新组织": 1,
+        "c3:组织简": 1,
+        "c3:织简历": 1,
+        "c3:简历措": 1,
+        "c3:历措辞": 1,
+        "w:polish": 1,
+        "w:the": 1,
+        "w:experience": 1,
+        "w:section": 1
+      },
+      "resume-generation-skill": {
+        "c:根据": 1,
+        "c:据资": 1,
+        "c:资料": 1,
+        "c:料生": 1,
+        "c:生成": 3,
+        "c:成一": 1,
+        "c:一份": 2,
+        "c:份完": 1,
+        "c:完整": 1,
+        "c:整简": 1,
+        "c:简历": 6,
+        "c3:根据资": 1,
+        "c3:据资料": 1,
+        "c3:资料生": 1,
+        "c3:料生成": 1,
+        "c3:生成一": 1,
+        "c3:成一份": 1,
+        "c3:一份完": 1,
+        "c3:份完整": 1,
+        "c3:完整简": 1,
+        "c3:整简历": 1,
+        "c:把当": 1,
+        "c:当前": 1,
+        "c:前内": 1,
+        "c:内容": 1,
+        "c:容导": 1,
+        "c:导出": 1,
+        "c:出为": 1,
+        "c:为结": 1,
+        "c:结构": 1,
+        "c:构化": 1,
+        "c:化简": 1,
+        "c3:把当前": 1,
+        "c3:当前内": 1,
+        "c3:前内容": 1,
+        "c3:内容导": 1,
+        "c3:容导出": 1,
+        "c3:导出为": 1,
+        "c3:出为结": 1,
+        "c3:为结构": 1,
+        "c3:结构化": 1,
+        "c3:构化简": 1,
+        "c3:化简历": 1,
+        "w:ats": 2,
+        "c:创建": 1,
+        "c:建一": 1,
+        "c:份可": 1,
+        "c:可以": 1,
+        "c:以投": 1,
+        "c:投递": 1,
+        "c:递的": 1,
+        "c3:创建一": 1,
+        "c3:建一份": 1,
+        "c3:一份可": 1,
+        "c3:份可以": 1,
+        "c3:可以投": 1,
+        "c3:以投递": 1,
+        "c3:投递的": 1,
+        "w:json": 2,
+        "w:resume": 5,
+        "c:文件": 1,
+        "c:我要": 1,
+        "c:要下": 1,
+        "c:下载": 1,
+        "c:载最": 1,
+        "c:最终": 1,
+        "c:终版": 1,
+        "c:版简": 1,
+        "c3:我要下": 1,
+        "c3:要下载": 1,
+        "c3:下载最": 1,
+        "c3:载最终": 1,
+        "c3:最终版": 1,
+        "c3:终版简": 1,
+        "c3:版简历": 1,
+        "c:把确": 1,
+        "c:确认": 1,
+        "c:认的": 1,
+        "c:的信": 1,
+        "c:信息": 1,
+        "c:息组": 1,
+        "c:组装": 1,
+        "c:装成": 1,
+        "c:成新": 1,
+        "c:新的": 1,
+        "c:的简": 2,
+        "c3:把确认": 1,
+        "c3:确认的": 1,
+        "c3:认的信": 1,
+        "c3:的信息": 1,
+        "c3:信息组": 1,
+        "c3:息组装": 1,
+        "c3:组装成": 1,
+        "c3:装成新": 1,
+        "c3:成新的": 1,
+        "c3:新的简": 1,
+        "c3:的简历": 2,
+        "c:成针": 1,
+        "c:针对": 1,
+        "c:对这": 1,
+        "c:这个": 1,
+        "c:个岗": 1,
+        "c:岗位": 1,
+        "c:位的": 1,
+        "c:历版": 1,
+        "c:版本": 1,
+        "c3:生成针": 1,
+        "c3:成针对": 1,
+        "c3:针对这": 1,
+        "c3:对这个": 1,
+        "c3:这个岗": 1,
+        "c3:个岗位": 1,
+        "c3:岗位的": 1,
+        "c3:位的简": 1,
+        "c3:简历版": 1,
+        "c3:历版本": 1,
+        "w:generate": 1,
+        "w:an": 1,
+        "w:friendly": 1,
+        "w:export": 1,
+        "w:my": 1,
+        "w:as": 1,
+        "w:create": 1,
+        "w:the": 1,
+        "w:final": 1,
+        "w:document": 1
+      },
+      "unknown": {
+        "w:jd": 1,
+        "c:帮我": 1,
+        "c:我匹": 1,
+        "c:匹配": 1,
+        "c:配这": 1,
+        "c:这个": 1,
+        "c:个岗": 1,
+        "c:岗位": 3,
+        "c:位的": 1,
+        "c3:帮我匹": 1,
+        "c3:我匹配": 1,
+        "c3:匹配这": 1,
+        "c3:配这个": 1,
+        "c3:这个岗": 1,
+        "c3:个岗位": 1,
+        "c3:岗位的": 1,
+        "c:查看": 1,
+        "c:看今": 1,
+        "c:今天": 1,
+        "c:天有": 1,
+        "c:有哪": 1,
+        "c:哪些": 1,
+        "c:些待": 1,
+        "c:待办": 1,
+        "c:办事": 1,
+        "c:事项": 1,
+        "c3:查看今": 1,
+        "c3:看今天": 1,
+        "c3:今天有": 1,
+        "c3:天有哪": 1,
+        "c3:有哪些": 1,
+        "c3:哪些待": 1,
+        "c3:些待办": 1,
+        "c3:待办事": 1,
+        "c3:办事项": 1,
+        "c:给招": 1,
+        "c:招聘": 3,
+        "c:聘经": 1,
+        "c:经理": 1,
+        "c:理写": 1,
+        "c:写一": 1,
+        "c:一封": 1,
+        "c:封邮": 1,
+        "c:邮件": 1,
+        "c3:给招聘": 1,
+        "c3:招聘经": 1,
+        "c3:聘经理": 1,
+        "c3:经理写": 1,
+        "c3:理写一": 1,
+        "c3:写一封": 1,
+        "c3:一封邮": 1,
+        "c3:封邮件": 1,
+        "c:规划": 1,
+        "c:划下": 1,
+        "c:下周": 1,
+        "c:周的": 1,
+        "c:的学": 1,
+        "c:学习": 1,
+        "c:习计": 1,
+        "c:计划": 1,
+        "c3:规划下": 1,
+        "c3:划下周": 1,
+        "c3:下周的": 1,
+        "c3:周的学": 1,
+        "c3:的学习": 1,
+        "c3:学习计": 1,
+        "c3:习计划": 1,
+        "c:查询": 1,
+        "c:询北": 1,
+        "c:北京": 1,
+        "c:京明": 1,
+        "c:明天": 1,
+        "c:天的": 1,
+        "c:的天": 1,
+        "c:天气": 1,
+        "c3:查询北": 1,
+        "c3:询北京": 1,
+        "c3:北京明": 1,
+        "c3:京明天": 1,
+        "c3:明天的": 1,
+        "c3:天的天": 1,
+        "c3:的天气": 1,
+        "c:把申": 1,
+        "c:申请": 1,
+        "c:请状": 1,
+        "c:状态": 1,
+        "c:态改": 1,
+        "c:改成": 1,
+        "c:成已": 1,
+        "c:已投": 1,
+        "c:投递": 1,
+        "c3:把申请": 1,
+        "c3:申请状": 1,
+        "c3:请状态": 1,
+        "c3:状态改": 1,
+        "c3:态改成": 1,
+        "c3:改成已": 1,
+        "c3:成已投": 1,
+        "c3:已投递": 1,
+        "c:提醒": 1,
+        "c:醒我": 1,
+        "c:我周": 1,
+        "c:周五": 1,
+        "c:五参": 1,
+        "c:参加": 1,
+        "c:加面": 1,
+        "c:面试": 1,
+        "c3:提醒我": 1,
+        "c3:醒我周": 1,
+        "c3:我周五": 1,
+        "c3:周五参": 1,
+        "c3:五参加": 1,
+        "c3:参加面": 1,
+        "c3:加面试": 1,
+        "w:transformer": 1,
+        "c:解释": 2,
+        "c:释一": 2,
+        "c:一下": 2,
+        "c3:解释一": 2,
+        "c3:释一下": 2,
+        "c:的注": 1,
+        "c:注意": 1,
+        "c:意力": 1,
+        "c:力机": 1,
+        "c:机制": 1,
+        "c3:的注意": 1,
+        "c3:注意力": 1,
+        "c3:意力机": 1,
+        "c3:力机制": 1,
+        "w:find": 1,
+        "w:matching": 1,
+        "w:jobs": 2,
+        "w:for": 3,
+        "w:me": 2,
+        "w:write": 1,
+        "w:a": 1,
+        "w:cover": 1,
+        "w:letter": 1,
+        "w:this": 1,
+        "w:company": 1,
+        "c:搜索": 1,
+        "c:索最": 1,
+        "c:最新": 1,
+        "c:新的": 2,
+        "c:的后": 1,
+        "c:后端": 1,
+        "c:端工": 1,
+        "c:工程": 1,
+        "c:程师": 1,
+        "c:师招": 1,
+        "c:聘职": 1,
+        "c:职位": 1,
+        "c3:搜索最": 1,
+        "c3:索最新": 1,
+        "c3:最新的": 1,
+        "c3:新的后": 1,
+        "c3:的后端": 1,
+        "c3:后端工": 1,
+        "c3:端工程": 1,
+        "c3:工程师": 1,
+        "c3:程师招": 1,
+        "c3:师招聘": 1,
+        "c3:招聘职": 1,
+        "c3:聘职位": 1,
+        "c:查找": 1,
+        "c:找适": 1,
+        "c:适合": 1,
+        "c:合我": 1,
+        "c:我的": 1,
+        "c:的前": 1,
+        "c:前端": 1,
+        "c:端开": 1,
+        "c:开发": 1,
+        "c:发岗": 1,
+        "c3:查找适": 1,
+        "c3:找适合": 1,
+        "c3:适合我": 1,
+        "c3:合我的": 1,
+        "c3:我的前": 1,
+        "c3:的前端": 1,
+        "c3:前端开": 1,
+        "c3:端开发": 1,
+        "c3:开发岗": 1,
+        "c3:发岗位": 1,
+        "c:讲解": 1,
+        "c:解神": 1,
+        "c:神经": 1,
+        "c:经网": 1,
+        "c:网络": 1,
+        "c:络反": 1,
+        "c:反向": 1,
+        "c:向传": 1,
+        "c:传播": 1,
+        "c:播原": 1,
+        "c:原理": 1,
+        "c3:讲解神": 1,
+        "c3:解神经": 1,
+        "c3:神经网": 1,
+        "c3:经网络": 1,
+        "c3:网络反": 1,
+        "c3:络反向": 1,
+        "c3:反向传": 1,
+        "c3:向传播": 1,
+        "c3:传播原": 1,
+        "c3:播原理": 1,
+        "w:lora": 1,
+        "c:和模": 1,
+        "c:模型": 1,
+        "c:型微": 1,
+        "c:微调": 1,
+        "c3:和模型": 1,
+        "c3:模型微": 1,
+        "c3:型微调": 1,
+        "c:分析": 1,
+        "c:析岗": 1,
+        "c:位要": 1,
+        "c:要求": 1,
+        "c:求与": 1,
+        "c:与个": 1,
+        "c:个人": 1,
+        "c:人经": 1,
+        "c:经历": 1,
+        "c:历的": 1,
+        "c:的差": 1,
+        "c:差距": 1,
+        "c3:分析岗": 1,
+        "c3:析岗位": 1,
+        "c3:岗位要": 1,
+        "c3:位要求": 1,
+        "c3:要求与": 1,
+        "c3:求与个": 1,
+        "c3:与个人": 1,
+        "c3:个人经": 1,
+        "c3:人经历": 1,
+        "c3:经历的": 1,
+        "c3:历的差": 1,
+        "c3:的差距": 1,
+        "c:抓取": 1,
+        "c:取新": 1,
+        "c:的招": 1,
+        "c:聘信": 1,
+        "c:信息": 1,
+        "c:息并": 1,
+        "c:并保": 1,
+        "c:保存": 1,
+        "c3:抓取新": 1,
+        "c3:取新的": 1,
+        "c3:新的招": 1,
+        "c3:的招聘": 1,
+        "c3:招聘信": 1,
+        "c3:聘信息": 1,
+        "c3:信息并": 1,
+        "c3:息并保": 1,
+        "c3:并保存": 1,
+        "w:search": 1,
+        "w:software": 1,
+        "w:engineer": 1,
+        "w:teach": 1,
+        "w:how": 1,
+        "w:backpropagation": 1,
+        "w:works": 1
+      }
+    }
+  }
+}

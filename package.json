@@ -10,20 +10,32 @@
     "build": "vite build --config frontend/vite.config.ts",
     "preview": "vite preview --config frontend/vite.config.ts",
     "test": "node --test tests/*.test.js",
+    "test:rag": "node scripts/evaluate-rag-golden.js",
+    "experiment:orchestration": "node scripts/compare-orchestration.js",
+    "train:skill-router": "node scripts/train-skill-router.js",
+    "test:skill-router": "node scripts/evaluate-skill-router.js",
+    "train:skill-router:embeddings": "node scripts/train-embedding-skill-router.js",
+    "test:skill-router:embeddings": "node scripts/evaluate-embedding-skill-router.js",
+    "experiment:skill-router": "node scripts/compare-skill-router-models.js",
     "prisma:push": "prisma db push",
     "prisma:generate": "prisma generate",
     "db:migrate-json": "node --env-file=.env scripts/migrate-json-to-prisma.js"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.2.0",
+    "@langchain/core": "^1.2.1",
+    "@langchain/langgraph": "^1.4.7",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@prisma/client": "^5.22.0",
     "cors": "^2.8.5",
     "dotenv": "^17.4.2",
     "express": "^4.21.2",
+    "langchain": "^1.5.2",
     "multer": "^1.4.5-lts.2",
     "pdf-parse": "^1.1.1",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/react": "^18.3.12",

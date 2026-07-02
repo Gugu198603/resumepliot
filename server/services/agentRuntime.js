@@ -1,14 +1,11 @@
-import { detectRisks } from './resumeParser.js';
 import { provider as defaultVectorProvider } from './vectorStore.js';
 import { planNextStep } from '../agents/planner.js';
-import { retrieveContext } from '../agents/retriever.js';
 import { generateInterviewQuestions } from '../agents/interviewer.js';
-import { critiqueAnswer } from '../agents/critic.js';
-import { rewriteArtifacts } from '../agents/writer.js';
 import { retrieveMemory, writeMemory } from './memoryManager.js';
 import { logger } from './logger.js';
 import { AgentRecoveryHardStopError, createRecoveryRuntime } from './agentRecovery.js';
 import { RUN_STATUS, createRunStateMachine, deriveFailureStatus } from './runStateMachine.js';
+import { AGENT_TOOL_POLICY, invokeTool } from '../tools/toolGateway.js';
 
 function makeRuntimeId() {
   return `runtime_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -19,12 +16,12 @@ function asPositiveInt(value, fallback) {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
 }
 
-function createRuntimeLimits() {
+function createRuntimeLimits(overrides = {}) {
   return {
-    maxSteps: asPositiveInt(process.env.AGENT_MAX_STEPS, 12),
-    maxToolCalls: asPositiveInt(process.env.AGENT_MAX_TOOL_CALLS, 20),
-    maxSameToolCalls: asPositiveInt(process.env.AGENT_MAX_SAME_TOOL_CALLS, 4),
-    timeoutMs: asPositiveInt(process.env.AGENT_TIMEOUT_MS, 120000)
+    maxSteps: asPositiveInt(overrides.maxSteps, asPositiveInt(process.env.AGENT_MAX_STEPS, 12)),
+    maxToolCalls: asPositiveInt(overrides.maxToolCalls, asPositiveInt(process.env.AGENT_MAX_TOOL_CALLS, 20)),
+    maxSameToolCalls: asPositiveInt(overrides.maxSameToolCalls, asPositiveInt(process.env.AGENT_MAX_SAME_TOOL_CALLS, 4)),
+    timeoutMs: asPositiveInt(overrides.timeoutMs, asPositiveInt(process.env.AGENT_TIMEOUT_MS, 120000))
   };
 }
 
@@ -82,10 +79,15 @@ export async function loadRuntimeMemory({ goal, userId, resumeId, sessionId, job
     userId ? retrieveMemoryBucket({ label: 'user', query, scopes: ['user'], userId, limit: 3 }) : null,
     resumeId ? retrieveMemoryBucket({ label: 'resume', query, scopes: ['resume'], resumeId, limit: 5 }) : null,
     sessionId ? retrieveMemoryBucket({ label: 'session', query, scopes: ['session'], sessionId, limit: 5 }) : null,
-    jobId ? retrieveMemoryBucket({ label: 'job', query, scopes: ['job'], jobId, limit: 5 }) : null
+    jobId ? retrieveMemoryBucket({ label: 'job', query, scopes: ['job'], jobId, limit: 5 }) : null,
+    resumeId ? retrieveMemoryBucket({ label: 'run_resume', query: '', scopes: ['run'], resumeId, limit: 5 }) : null,
+    sessionId ? retrieveMemoryBucket({ label: 'run_session', query: '', scopes: ['run'], sessionId, limit: 5 }) : null,
+    jobId ? retrieveMemoryBucket({ label: 'run_job', query: '', scopes: ['run'], jobId, limit: 5 }) : null
   ].filter(Boolean));
 
-  const items = buckets.flatMap((bucket) => bucket.items);
+  const items = [...new Map(
+    buckets.flatMap((bucket) => bucket.items).map((item) => [item.id, item])
+  ).values()];
   return {
     items,
     buckets: buckets.map((bucket) => ({
@@ -228,11 +230,13 @@ export async function runAgentWorkflow({
   jobId = null,
   vectorProvider = defaultVectorProvider,
   runtimeRunId: providedRuntimeRunId = null,
-  onRunEvent = null
+  onRunEvent = null,
+  allowedTools = null,
+  runtimePolicy = {}
 } = {}) {
   const runtimeRunId = providedRuntimeRunId || makeRuntimeId();
   const startedAt = Date.now();
-  const limits = createRuntimeLimits();
+  const limits = createRuntimeLimits(runtimePolicy);
   const runEvents = [];
   const toolCallCounts = new Map();
   let eventSequence = 0;
@@ -301,10 +305,10 @@ export async function runAgentWorkflow({
     }
   }
 
-  function recordToolCall(agent) {
+  function recordToolCall(agent, toolName) {
     totalToolCalls += 1;
-    const nextSameCount = (toolCallCounts.get(agent) || 0) + 1;
-    toolCallCounts.set(agent, nextSameCount);
+    const nextSameCount = (toolCallCounts.get(toolName) || 0) + 1;
+    toolCallCounts.set(toolName, nextSameCount);
     if (totalToolCalls > limits.maxToolCalls) {
       hardStop('AGENT_MAX_TOOL_CALLS_EXCEEDED', `Agent runtime exceeded maxToolCalls=${limits.maxToolCalls}.`, {
         agent,
@@ -312,11 +316,43 @@ export async function runAgentWorkflow({
       });
     }
     if (nextSameCount > limits.maxSameToolCalls) {
-      hardStop('AGENT_MAX_SAME_TOOL_CALLS_EXCEEDED', `Agent runtime exceeded maxSameToolCalls=${limits.maxSameToolCalls} for ${agent}.`, {
+      hardStop('AGENT_MAX_SAME_TOOL_CALLS_EXCEEDED', `Agent runtime exceeded maxSameToolCalls=${limits.maxSameToolCalls} for ${toolName}.`, {
         agent,
+        toolName,
         sameToolCalls: nextSameCount
       });
     }
+  }
+
+  async function callAgentTool(agent, name, args) {
+    recordToolCall(agent, name);
+    const agentTools = allowedTools
+      ? [
+          ...(AGENT_TOOL_POLICY[agent] || []).filter((tool) => allowedTools.includes(tool)),
+          ...allowedTools.filter((tool) => tool.includes('::'))
+        ]
+      : undefined;
+    return await invokeTool({
+      agent,
+      name,
+      args,
+      ...(agentTools ? { allowedTools: agentTools } : {}),
+      timeoutMs: Math.min(Number(process.env.TOOL_TIMEOUT_MS || 30_000), limits.timeoutMs),
+      onAudit: async (audit) => {
+        recordRunEvent(audit.type, {
+          agent,
+          status: audit.status,
+          latencyMs: audit.latencyMs,
+          errorCode: audit.errorCode,
+          errorMessage: audit.errorMessage,
+          payload: {
+            toolName: name,
+            args: audit.args || null,
+            result: audit.result || null
+          }
+        });
+      }
+    });
   }
 
   stateMachine.transition(RUN_STATUS.RUNNING, {
@@ -415,7 +451,6 @@ export async function runAgentWorkflow({
 
   async function runWorkflowStep(step) {
     assertNotTimedOut(step.agent);
-    recordToolCall(step.agent);
     const stepStartedAt = Date.now();
     recordRunEvent('step_start', {
       agent: step.agent,
@@ -431,7 +466,12 @@ export async function runAgentWorkflow({
 
     let collaborativeOutput = null;
     if (step.agent === 'parser') {
-      parseOutput = { sections, risks: risks.length ? risks : detectRisks(sourceText) };
+      const result = await callAgentTool('parser', 'parse_resume', { text: sourceText, buildKb: false });
+      parseOutput = {
+        sections: result.sections || sections,
+        risks: risks.length ? risks : result.risks || [],
+        kbSize: result.kbSize || 0
+      };
       collaborativeOutput = makeCollaborativeOutput('parser', {
         observation: `识别到 ${parseOutput.sections.length} 个简历模块和 ${parseOutput.risks.length} 个风险提示。`,
         proposal: '将结构化模块交给 planner 判断下一位协作 agent。',
@@ -450,7 +490,13 @@ export async function runAgentWorkflow({
         data: plan
       });
     } else if (step.agent === 'retriever') {
-      const result = await retrieveContext({ text: sourceText, query: goal, topK: 3, sessionTurns, resumeId });
+      const result = await callAgentTool('retriever', 'search_resume_chunks', {
+        text: sourceText,
+        query: goal,
+        topK: 3,
+        sessionTurns,
+        ...(resumeId ? { resumeId } : {})
+      });
       retrieved = result.retrieved;
       retrievalMeta = {
         query: result.query,
@@ -500,7 +546,12 @@ export async function runAgentWorkflow({
         data: result
       });
     } else if (step.agent === 'critic' && answer) {
-      critique = await critiqueAnswer({ answer, retrieved, question: questions?.detail?.[0] || questions?.basic?.[0] || '', memoryContext });
+      critique = await callAgentTool('critic', 'evaluate_answer', {
+        answer,
+        retrieved,
+        question: questions?.detail?.[0] || questions?.basic?.[0] || '',
+        memoryContext
+      });
       if (critique.llm) llmTrace.push({ agent: 'critic', ...critique.llm });
       collaborativeOutput = makeCollaborativeOutput('critic', {
         observation: `完成回答评估，语义匹配度 ${critique.scores?.semanticMatch ?? '-'}。`,
@@ -510,7 +561,12 @@ export async function runAgentWorkflow({
         data: critique
       });
     } else if (step.agent === 'writer' && answer) {
-      rewrite = await rewriteArtifacts({ text: sourceText, answer, feedback: critique?.feedback || [], memoryContext });
+      rewrite = await callAgentTool('writer', 'rewrite_resume', {
+        text: sourceText,
+        answer,
+        feedback: critique?.feedback || [],
+        memoryContext
+      });
       if (rewrite.llm) llmTrace.push({ agent: 'writer', ...rewrite.llm });
       collaborativeOutput = makeCollaborativeOutput('writer', {
         observation: rewrite.improvedAnswer ? '已基于 critic 反馈生成改进回答。' : '未生成改进回答。',
@@ -673,6 +729,10 @@ export async function runAgentWorkflow({
   }
 
   const llmSummary = summarizeLlmTrace(llmTrace);
+  // JSON fallback persists run events and memories in the same file. Drain the
+  // event delivery queue before writing memory so concurrent read-modify-write
+  // cycles cannot overwrite the session or its prior events.
+  await flushRunEvents();
   const memoryWrite = await writeRuntimeSummaryMemory({
     runtimeRunId,
     goal,

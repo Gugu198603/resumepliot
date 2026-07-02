@@ -1,0 +1,12 @@
+{
+  "id": "interview-training",
+  "name": "Interview Training",
+  "version": "1.0.0",
+  "description": "基于简历证据进行模拟面试、追问、回答评价与改写。",
+  "triggers": ["模拟面试", "面试训练", "面试追问", "回答点评", "压力面试", "mock interview", "interview critique"],
+  "inputSchema": { "type": "object", "required": ["goal"], "properties": { "goal": { "type": "string" }, "answer": { "type": "string" }, "text": { "type": "string" } } },
+  "outputSchema": { "type": "object", "required": ["questions"], "properties": { "questions": { "type": "object" }, "critique": { "type": "object" }, "rewrite": { "type": "object" } } },
+  "allowedTools": ["parse_resume", "search_resume_chunks", "evaluate_answer", "rewrite_resume"],
+  "routing": { "minConfidence": 0.45 },
+  "runtime": { "timeoutMs": 120000, "maxToolCalls": 12, "maxSameToolCalls": 4 }
+}

@@ -1,9 +1,13 @@
 import { createHash } from 'crypto';
-import { PrismaClient } from '@prisma/client';
 import { logger } from './logger.js';
 import { provider as vectorProvider, searchMemoryPoints, upsertMemoryPoint } from './vectorStore.js';
-
-const prisma = new PrismaClient();
+import {
+  createMemoryRecord,
+  findMemoryRecord,
+  listMemoryRecords,
+  touchMemoryRecords,
+  updateMemoryRecord
+} from './database.js';
 
 export const MEMORY_SCOPES = new Set(['global', 'user', 'resume', 'session', 'job', 'run']);
 export const MEMORY_TYPES = new Set([
@@ -150,15 +154,12 @@ async function indexMemoryRow(row) {
 
     if (!indexed?.pointId) return { indexed: false, reason: 'empty_point' };
 
-    const updated = await prisma.memoryItem.update({
-      where: { id: row.id },
-      data: {
+    const updated = await updateMemoryRecord(row.id, {
         embeddingProvider: process.env.EMBED_MODEL || 'Xenova/bge-m3',
         vectorProvider,
         vectorNamespace: indexed.namespace,
         vectorPointId: indexed.pointId,
         vectorDim: indexed.vectorDim
-      }
     });
     return { indexed: true, row: updated };
   } catch (error) {
@@ -170,57 +171,6 @@ async function indexMemoryRow(row) {
     });
     return { indexed: false, reason: error.message };
   }
-}
-
-function buildWhere({
-  query = '',
-  scopes,
-  types,
-  userId,
-  resumeId,
-  sessionId,
-  jobId,
-  runId,
-  sourceKind,
-  sourceId,
-  status = 'active',
-  includeExpired = false
-} = {}) {
-  const where = {};
-  const scopeList = asArray(scopes);
-  const typeList = asArray(types);
-
-  if (scopeList.length) where.scope = { in: scopeList };
-  if (typeList.length) where.type = { in: typeList };
-  if (userId) where.userId = userId;
-  if (resumeId) where.resumeId = resumeId;
-  if (sessionId) where.sessionId = sessionId;
-  if (jobId) where.jobId = jobId;
-  if (runId) where.runId = runId;
-  if (sourceKind) where.sourceKind = sourceKind;
-  if (sourceId) where.sourceId = sourceId;
-  if (status) where.status = status;
-
-  if (!includeExpired) {
-    where.OR = [
-      { expiresAt: null },
-      { expiresAt: { gt: new Date() } }
-    ];
-  }
-
-  const trimmedQuery = String(query || '').trim();
-  if (trimmedQuery) {
-    const textFilter = [
-      { title: { contains: trimmedQuery } },
-      { content: { contains: trimmedQuery } }
-    ];
-    where.AND = [
-      ...(where.AND || []),
-      { OR: textFilter }
-    ];
-  }
-
-  return where;
 }
 
 export async function writeMemory(input = {}) {
@@ -254,8 +204,7 @@ export async function writeMemory(input = {}) {
 
   try {
       const namespace = input.vectorNamespace || buildMemoryNamespace(input.scope, input);
-      const existing = await prisma.memoryItem.findFirst({
-        where: {
+      const existing = await findMemoryRecord({
           scope: input.scope,
           type: input.type,
           contentHash: hash,
@@ -266,10 +215,8 @@ export async function writeMemory(input = {}) {
           runId: input.runId || null,
           sourceKind: input.sourceKind || null,
           sourceId: input.sourceId || null
-        }
       });
-      const row = existing || await prisma.memoryItem.create({
-      data: {
+      const row = existing || await createMemoryRecord({
         userId: input.userId || null,
         resumeId: input.resumeId || null,
         sessionId: input.sessionId || null,
@@ -292,7 +239,6 @@ export async function writeMemory(input = {}) {
         status: input.status || 'active',
         expiresAt: input.expiresAt ? new Date(input.expiresAt) : null,
         metadataJson: toJsonString(input.metadata)
-      }
     });
       const indexResult = existing?.vectorPointId ? { row: existing } : await indexMemoryRow(row);
       const mapped = mapMemory(indexResult.row || row);
@@ -337,22 +283,13 @@ async function retrieveVectorMemoryCandidates(options, limit) {
     if (!ids.length) return [];
     const scopeList = asArray(options.scopes);
     const typeList = asArray(options.types);
-    const rows = await prisma.memoryItem.findMany({
-      where: {
-        id: { in: ids },
-        ...(scopeList.length ? { scope: { in: scopeList } } : {}),
-        ...(typeList.length ? { type: { in: typeList } } : {}),
-        status: options.status || 'active',
-        ...(options.includeExpired
-          ? {}
-          : {
-              OR: [
-                { expiresAt: null },
-                { expiresAt: { gt: new Date() } }
-              ]
-            })
-      }
-    });
+    const rows = await listMemoryRecords({
+      ids,
+      scopes: scopeList,
+      types: typeList,
+      status: options.status || 'active',
+      includeExpired: options.includeExpired
+    }, ids.length);
     const scoreById = new Map(points.map((point) => [point.memoryId, point]));
     return rows.map((row) => ({
       ...row,
@@ -376,8 +313,7 @@ async function promoteMemoryItem(row) {
   const promoted = [];
 
   for (const target of targets) {
-    const exists = await prisma.memoryItem.findFirst({
-      where: {
+    const exists = await findMemoryRecord({
         scope: target.scope,
         type: row.type,
         contentHash: row.contentHash,
@@ -386,13 +322,11 @@ async function promoteMemoryItem(row) {
         sessionId: target.scope === 'session' ? row.sessionId : null,
         sourceKind: 'memory_promotion',
         sourceId: row.id
-      }
     });
     if (exists) continue;
 
     const namespace = buildMemoryNamespace(target.scope, row);
-    const created = await prisma.memoryItem.create({
-      data: {
+    const created = await createMemoryRecord({
         userId: target.scope === 'user' ? row.userId : null,
         resumeId: target.scope === 'resume' ? row.resumeId : null,
         sessionId: target.scope === 'session' ? row.sessionId : null,
@@ -414,7 +348,6 @@ async function promoteMemoryItem(row) {
           promotedFromScope: row.scope,
           promotedAtAccessCount: row.accessCount
         })
-      }
     });
     const indexResult = await indexMemoryRow(created);
     promoted.push(mapMemory(indexResult.row || created));
@@ -440,7 +373,6 @@ async function promoteRetrievedMemories(rows = []) {
 
 export async function retrieveMemory(options = {}) {
   const limit = Math.min(Number(options.limit) || 10, 50);
-  const where = buildWhere(options);
   const startedAt = Date.now();
 
   logger.info('memory.retrieve.start', {
@@ -462,15 +394,20 @@ export async function retrieveMemory(options = {}) {
   });
 
   try {
-    const rows = await prisma.memoryItem.findMany({
-      where,
-      orderBy: [
-        { importance: 'desc' },
-        { confidence: 'desc' },
-        { updatedAt: 'desc' }
-      ],
-      take: limit
-    });
+    const rows = await listMemoryRecords({
+      query: options.query || '',
+      scopes: asArray(options.scopes),
+      types: asArray(options.types),
+      userId: options.userId,
+      resumeId: options.resumeId,
+      sessionId: options.sessionId,
+      jobId: options.jobId,
+      runId: options.runId,
+      sourceKind: options.sourceKind,
+      sourceId: options.sourceId,
+      status: options.status || 'active',
+      includeExpired: options.includeExpired
+    }, limit);
     const vectorRows = await retrieveVectorMemoryCandidates(options, limit);
     const mergedById = new Map();
     for (const row of [...vectorRows, ...rows]) {
@@ -502,13 +439,7 @@ export async function retrieveMemory(options = {}) {
 
     if (mergedRows.length && options.touch !== false) {
       const touchStartedAt = Date.now();
-      await prisma.memoryItem.updateMany({
-        where: { id: { in: mergedRows.map((row) => row.id) } },
-        data: {
-          accessCount: { increment: 1 },
-          lastAccessedAt: new Date()
-        }
-      });
+      await touchMemoryRecords(mergedRows.map((row) => row.id));
       const promoted = await promoteRetrievedMemories(mergedRows);
       logger.info('memory.retrieve.touch_success', {
         count: mergedRows.length,

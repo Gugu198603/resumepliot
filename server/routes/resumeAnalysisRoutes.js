@@ -17,7 +17,8 @@ import { makeId } from '../services/idFactory.js';
 import { logger } from '../services/logger.js';
 import { generateResumePreview } from '../services/resumeGeneration.js';
 import { detectRisks, normalizeText, rewriteResume, splitSections } from '../services/resumeParser.js';
-import { buildKnowledgeBase, provider as vectorProvider } from '../services/vectorStore.js';
+import { provider as vectorProvider } from '../services/vectorStore.js';
+import { rebuildResumeKnowledgeBase } from '../services/knowledgeBaseVersion.js';
 
 const router = Router();
 const upload = multer({
@@ -152,27 +153,24 @@ router.post('/resumes/:id/corrections', async (req, res) => {
       ? normalizeText(req.body.text)
       : sectionsToText(sections);
     const risks = detectRisks(text);
-    const kb = await buildKnowledgeBase(text, current.id);
-    const chunks = kb.map((chunk) => ({ ...chunk, resumeId: current.id }));
     const correction = await saveResumeCorrectionEvent({
       resumeId: current.id,
       beforeSections,
       afterSections: sections,
       errorTypes
     });
-    const resume = await updateResume(current.id, {
+    const { resume, version, chunks } = await rebuildResumeKnowledgeBase({
+      resumeId: current.id,
       text,
       sections,
-      risks,
-      kbSize: kb.length,
-      chunks,
-      vectorProvider
+      risks
     });
     logger.info('resume_correction.saved', {
       resumeId: current.id,
       correctionId: correction.id,
       summary: correction.summary,
-      rebuiltKbSize: kb.length
+      rebuiltKbSize: chunks.length,
+      knowledgeBaseVersion: version.versionNumber
     });
     return res.json({ resume, correction });
   } catch (error) {
@@ -238,25 +236,31 @@ router.post('/parse', upload.single('resume'), async (req, res) => {
     const sections = splitSections(text);
     const risks = detectRisks(text);
     const resumeId = makeId('resume');
-    const kb = await buildKnowledgeBase(text, resumeId);
-    const chunks = kb.map((chunk) => ({ ...chunk, resumeId }));
-    const record = await saveResumeRecord({
+    await saveResumeRecord({
       id: resumeId,
       text,
       sections,
       risks,
-      kbSize: kb.length,
-      chunks,
+      kbSize: 0,
+      chunks: [],
       vectorProvider
+    });
+    const { resume: record, version, chunks } = await rebuildResumeKnowledgeBase({
+      resumeId,
+      text,
+      sections,
+      risks
     });
     return res.json({
       resumeId: record.id,
       text,
       sections,
       risks,
-      kbSize: kb.length,
+      kbSize: chunks.length,
       chunks: chunks.map(stripChunkForResponse),
       vectorProvider,
+      knowledgeBaseVersion: version.versionNumber,
+      knowledgeBaseVersionId: version.id,
       reusedExisting: false
     });
   } catch (error) {

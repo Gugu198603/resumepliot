@@ -1,0 +1,61 @@
+{
+  "experiment": "skill-router-model-comparison",
+  "version": "1.0.0",
+  "dataset": {
+    "id": "resumepilot-skill-router",
+    "version": "1.0.0",
+    "testExamples": 20,
+    "sha256": "ce9b8c445d82003e7e8af3a291c9fecc3ba4b17787175095fcb2a8ff2a91172c"
+  },
+  "encoder": {
+    "model": "Xenova/bge-m3",
+    "pooling": "cls",
+    "normalize": true,
+    "frozen": true,
+    "dimension": 1024,
+    "examplesEncoded": 99,
+    "encodingMs": 6132.582
+  },
+  "models": [
+    {
+      "name": "naive-bayes-char-ngram",
+      "accuracy": 0.8,
+      "macroF1": 0.799,
+      "unknownRecall": 1,
+      "coverage": 0.65,
+      "latency": {
+        "encoderMsPerItem": 0,
+        "classifierMsPerItem": 0.044,
+        "endToEndMsPerItem": 0.044
+      }
+    },
+    {
+      "name": "bge-m3-prototype",
+      "accuracy": 0.9,
+      "macroF1": 0.903,
+      "unknownRecall": 0.75,
+      "coverage": 0.85,
+      "latency": {
+        "encoderMsPerItem": 110.075,
+        "classifierMsPerItem": 0.154,
+        "endToEndMsPerItem": 110.23
+      }
+    },
+    {
+      "name": "bge-m3-frozen-encoder-softmax-head",
+      "accuracy": 0.9,
+      "macroF1": 0.898,
+      "unknownRecall": 1,
+      "coverage": 0.75,
+      "latency": {
+        "encoderMsPerItem": 110.075,
+        "classifierMsPerItem": 0.006,
+        "endToEndMsPerItem": 110.082
+      }
+    }
+  ],
+  "notes": [
+    "BGE latency includes text encoding plus classifier-head latency.",
+    "The softmax experiment fine-tunes only the classification head; the BGE encoder remains frozen."
+  ]
+}

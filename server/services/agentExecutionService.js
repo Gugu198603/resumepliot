@@ -24,13 +24,23 @@ export async function executeAgentRun(input = {}, { onCreated, onEvent } = {}) {
   const skill = await routeSkill({ goal: goal || '' });
   const executionPlan = resolveExecutionPlan({ content: skill.rawContent || '' });
   const existingSession = sessionId ? await getSession(sessionId) : null;
+  const session = existingSession && !startNewSession
+    ? existingSession
+    : goal
+      ? await createSession({
+          title: goal || '模拟面试',
+          goal: goal || '模拟面试',
+          resumeId: effectiveResumeId
+        })
+      : null;
+  const effectiveSessionId = session?.id || sessionId || null;
   const runtimeRunId = makeId('runtime');
   const run = await createRunRecord({
     runtimeRunId,
     status: 'running',
     goal,
     hasAnswer: Boolean(answer),
-    sessionId,
+    sessionId: effectiveSessionId,
     resumeId: effectiveResumeId,
     skill: skill.selectedSkill,
     executionPlan,
@@ -47,11 +57,13 @@ export async function executeAgentRun(input = {}, { onCreated, onEvent } = {}) {
     sections,
     risks,
     executionPlan,
-    sessionTurns: existingSession?.turns || [],
-    sessionId,
+    sessionTurns: session?.turns || [],
+    sessionId: effectiveSessionId,
     resumeId: effectiveResumeId,
     vectorProvider,
     runtimeRunId,
+    allowedTools: skill.selectedSkill?.allowedTools || null,
+    runtimePolicy: skill.selectedSkill?.runtime || {},
     onRunEvent: async (event) => {
       const savedEvent = await appendRunEvent(run.id, event);
       await onEvent?.(savedEvent || event);
@@ -64,13 +76,9 @@ export async function executeAgentRun(input = {}, { onCreated, onEvent } = {}) {
     runEvents, runtimeLimits, workspaceState, orchestrationHistory
   } = runtime;
 
-  let session = null;
-  if (status === 'succeeded' && (sessionId || goal)) {
-    session = sessionId && !startNewSession
-      ? existingSession
-      : await createSession({ title: goal || '模拟面试', goal: goal || '模拟面试', resumeId: effectiveResumeId });
-    if (session) {
-      session = await appendSessionTurn(session.id, {
+  let updatedSession = session;
+  if (status === 'succeeded' && updatedSession) {
+      updatedSession = await appendSessionTurn(updatedSession.id, {
         id: makeId('turn'),
         question: questions?.detail?.[0] || questions?.basic?.[0] || goal,
         answer,
@@ -80,7 +88,6 @@ export async function executeAgentRun(input = {}, { onCreated, onEvent } = {}) {
         runId: run.id,
         resumeId: effectiveResumeId
       }, run.id);
-    }
   }
 
   const result = {
@@ -88,7 +95,7 @@ export async function executeAgentRun(input = {}, { onCreated, onEvent } = {}) {
     runtimeRunId,
     status,
     error,
-    sessionId: session?.id || null,
+    sessionId: updatedSession?.id || effectiveSessionId,
     resumeId: effectiveResumeId,
     skill,
     executionPlan,
@@ -115,7 +122,7 @@ export async function executeAgentRun(input = {}, { onCreated, onEvent } = {}) {
     ...result,
     skill: skill.selectedSkill,
     hasAnswer: Boolean(answer),
-    sessionId: session?.id || sessionId || null,
+    sessionId: updatedSession?.id || effectiveSessionId,
     latencyMs: runtime.runEvents?.findLast?.((event) => event.type === 'run_success' || event.type === 'run_failed')?.latencyMs
   });
   return { ...result, runEvents: finalRecord?.runEvents || runEvents };
