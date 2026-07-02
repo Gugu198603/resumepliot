@@ -1,0 +1,14 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "f442280af0f0a3b4b2b4a7647951b073cbc961c8",
+  "prompts": {},
+  "humans": {
+    "h_edffa6d85a1c23": {
+      "author": "denglijuan <denglijuan.111@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
